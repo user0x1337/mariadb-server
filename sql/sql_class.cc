@@ -683,6 +683,11 @@ const char *thd_where(THD *thd)
     return "UNKNOWN";
 }
 
+void assign_json_depth(int (*newFunc)(void))
+{
+    get_json_depth = newFunc;
+}
+
 THD::THD(my_thread_id id, bool is_wsrep_applier)
   :Statement(&main_lex, &main_mem_root, STMT_CONVENTIONAL_EXECUTION,
              /* statement id */ 0),
@@ -4619,6 +4624,7 @@ void thd_increment_bytes_sent(void *thd, size_t length)
     ((THD*) thd)->status_var.bytes_sent+= length;
   }
 }
+
 
 my_bool thd_net_is_killed(THD *thd)
 {

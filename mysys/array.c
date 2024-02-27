@@ -411,3 +411,141 @@ void freeze_size(DYNAMIC_ARRAY *array)
     array->max_element= elements;
   }
 }
+
+
+int mem_root_dynamic_array_init(MEM_ROOT *current_mem_root, PSI_memory_key psi_key,
+                                MEM_ROOT_DYNAMIC_ARRAY *array,
+                                size_t element_size, void *init_buffer,
+                                size_t init_alloc, size_t alloc_increment,
+                                myf my_flags)
+{
+  DBUG_ENTER("init_mem_root_dynamic_array");
+  if (!alloc_increment)
+  {
+    alloc_increment=MY_MAX((8192-MALLOC_OVERHEAD)/element_size,16);
+    if (init_alloc > 8 && alloc_increment > init_alloc * 2)
+      alloc_increment=init_alloc*2;
+  }
+  array->elements=0;
+  array->max_element=init_alloc;
+  array->alloc_increment=alloc_increment;
+  array->size_of_element=element_size;
+  array->m_psi_key= psi_key;
+  array->malloc_flags= my_flags;
+  DBUG_ASSERT((my_flags & MY_INIT_BUFFER_USED) == 0);
+  if ((array->buffer= (uchar*)init_buffer))
+  {
+    array->malloc_flags|= MY_INIT_BUFFER_USED;
+    DBUG_RETURN(FALSE);
+  }
+
+  array->mem_root= current_mem_root;
+
+  /*
+    Since the dynamic array is usable even if allocation fails here malloc
+    should not throw an error
+  */
+  if (init_alloc &&
+      !(array->buffer= (uchar*) alloc_root(array->mem_root,
+                                                 array->size_of_element*array->max_element)))
+    array->max_element=0;
+  //memset(array->buffer, 0, array->size_of_element*array->max_element);
+
+  DBUG_RETURN(FALSE);
+}
+
+void mem_root_dynamic_array_reset(MEM_ROOT_DYNAMIC_ARRAY *array)
+{
+  memset(array->buffer, 0, (array->size_of_element)*(array->max_element));
+}
+
+
+int mem_root_allocate_dynamic(MEM_ROOT *mem_root,
+                              MEM_ROOT_DYNAMIC_ARRAY *array,
+                              size_t max_elements)
+{
+  DBUG_ENTER("allocate_dynamic");
+
+  if (max_elements >= array->max_element)
+  {
+    size_t size;
+    uchar *new_ptr;
+
+    size= (max_elements + array->alloc_increment);
+    if (array->malloc_flags & MY_INIT_BUFFER_USED)
+    {
+       /*
+         In this senerio, the buffer is statically preallocated,
+         so we have to create an all-new malloc since we overflowed
+       */
+       if (!(new_ptr= (uchar *) alloc_root(mem_root,
+                                           size * array->size_of_element)))
+         DBUG_RETURN(0);
+       array->malloc_flags&= ~MY_INIT_BUFFER_USED;
+    }
+    else if (!(new_ptr= (uchar*) alloc_root(mem_root, size*array->size_of_element)))
+      DBUG_RETURN(TRUE);
+    memcpy(new_ptr, array->buffer,
+              array->max_element * array->size_of_element);
+    memset(new_ptr+((array->max_element) * array->size_of_element), 0, array->alloc_increment*array->size_of_element);
+    array->buffer= new_ptr;
+    array->max_element= size;
+  }
+  DBUG_RETURN(FALSE);
+}
+
+
+int mem_root_dynamic_array_set_val(MEM_ROOT_DYNAMIC_ARRAY *array,
+                                   const void *element, size_t idx)
+{
+  if (idx >= array->max_element)
+  {
+    if (mem_root_allocate_dynamic(array->mem_root, array, idx))
+      return TRUE;
+    array->elements++;
+  }
+  memcpy(array->buffer+(idx * array->size_of_element), element,
+         array->size_of_element);
+  return FALSE;
+}
+
+void* mem_root_dynamic_array_get_val(MEM_ROOT_DYNAMIC_ARRAY *array, size_t idx)
+{
+  void* element_ptr;
+
+  if (idx >= array->max_element)
+  {
+    if (mem_root_allocate_dynamic(array->mem_root, array, idx))
+      return 0;
+  }
+  // Calculate the pointer to the desired element in the array
+  element_ptr = array->buffer + (idx * array->size_of_element);
+  return element_ptr;
+}
+
+ void* mem_root_dynamic_array_get_val_ptr(MEM_ROOT_DYNAMIC_ARRAY *array, size_t idx)
+{
+  
+  if (idx >= array->max_element)
+  {
+    if (mem_root_allocate_dynamic(array->mem_root, array, idx))
+      return 0;
+  }
+  // Calculate the pointer to the desired element in the array
+  return (array->buffer + (idx * array->size_of_element));
+}
+
+void mem_root_dynamic_array_copy(MEM_ROOT_DYNAMIC_ARRAY *dest, MEM_ROOT_DYNAMIC_ARRAY *src)
+{
+  for (int i=0; i<src->max_element; i++)
+  {
+    void *element= src->buffer+(i*src->size_of_element);
+    mem_root_dynamic_array_set_val(dest, element, i);
+  }
+  dest->elements= src->elements;
+  dest->max_element=src->max_element;
+  dest->alloc_increment=src->alloc_increment;
+  dest->size_of_element=src->size_of_element;
+  dest->m_psi_key= src->m_psi_key;
+  dest->malloc_flags= src->malloc_flags;
+}
