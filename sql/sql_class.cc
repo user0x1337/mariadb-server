@@ -5429,7 +5429,9 @@ thd_need_wait_reports(const MYSQL_THD thd)
 /*
   Used by storage engines (currently InnoDB) to report that
   one transaction THD is about to go to wait for a transactional lock held by
-  another transactions OTHER_THD.
+  another transactions OTHER_THD. Also in case of a non-unique index locking
+  the slave applier is informed on a prepared XA transaction holding
+  an offending lock.
 
   This is used for parallel replication, where transactions are required to
   commit in the same order on the slave as they did on the master. If the
@@ -5443,6 +5445,9 @@ thd_need_wait_reports(const MYSQL_THD thd)
   slave in the first place. However, it is possible in case when the optimizer
   chooses a different plan on the slave than on the master (eg. table scan
   instead of index scan).
+  When the latter takes places and the conflict on a non-unique index involves
+  the slave applier the latter needs to know whether the lock onwer is
+  a prepared XA and this is provided.
 
   Storage engines report lock waits using this call. If a lock wait causes a
   deadlock with the pre-determined commit order, we kill the later
@@ -5455,20 +5460,33 @@ thd_need_wait_reports(const MYSQL_THD thd)
   transaction.
 */
 extern "C" int
-thd_rpl_deadlock_check(MYSQL_THD thd, MYSQL_THD other_thd)
+thd_rpl_deadlock_check(MYSQL_THD thd, MYSQL_THD other_thd,
+                       bool is_other_prepared, bool is_index_unique,
+                       uint *flagged)
 {
-  rpl_group_info *rgi;
-  rpl_group_info *other_rgi;
+  rpl_group_info *rgi=  thd ? thd->rgi_slave : NULL;
+  rpl_group_info *other_rgi= other_thd ? other_thd->rgi_slave : NULL;
 
   if (!thd)
     return 0;
   DEBUG_SYNC(thd, "thd_report_wait_for");
   thd->transaction->stmt.mark_trans_did_wait();
+
+  /*
+    Return to the caller the fact of the non-unique index wait lock
+    conflicts with one of a prepared state transaction.
+  */
+  if (!is_index_unique && rgi && rgi->is_row_event_execution()) {
+    if (is_other_prepared && !other_thd)
+    {
+      rgi->exec_flags |= 1 << rpl_group_info::HIT_BUSY_INDEX;
+      (*flagged)++;
+    }
+  }
+
   if (!other_thd)
     return 0;
   binlog_report_wait_for(thd, other_thd);
-  rgi= thd->rgi_slave;
-  other_rgi= other_thd->rgi_slave;
   if (!rgi || !other_rgi)
     return 0;
   if (!rgi->is_parallel_exec)
