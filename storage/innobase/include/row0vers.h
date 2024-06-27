@@ -40,19 +40,18 @@ class ReadView;
 
 /** Determine if an active transaction has inserted or modified a secondary
 index record.
-@param[in,out]	caller_trx	trx of current thread
-@param[in]	rec	secondary index record
-@param[in]	index	secondary index
-@param[in]	offsets	rec_get_offsets(rec, index)
-@return	the active transaction; state must be rechecked after
+@param caller_trx            trx of current thread
+@param rec                   secondary index record
+@param index                 secondary index
+@param offsets               rec_get_offsets(rec, index)
+@param caller_owns_trx_mutex true if caller already holds trx->mutex, false
+                             otherwise
+@return the active transaction; state must be rechecked after
 acquiring trx->mutex, and trx->release_reference() must be invoked
-@retval	NULL if the record was committed */
-trx_t*
-row_vers_impl_x_locked(
-	trx_t*		caller_trx,
-	const rec_t*	rec,
-	dict_index_t*	index,
-	const rec_offs*	offsets);
+@retval NULL if the record was committed */
+trx_t *row_vers_impl_x_locked(trx_t *caller_trx, const rec_t *rec,
+                              dict_index_t *index, const rec_offs *offsets,
+                              bool caller_owns_trx_mutex);
 
 /** Find out whether data tuple has missing data type
 for indexed virtual column.

@@ -69,26 +69,23 @@ row_vers_non_virtual_fields_equal(
 
 /** Determine if an active transaction has inserted or modified a secondary
 index record.
-@param[in,out]	caller_trx	trx of current thread
-@param[in]	clust_rec	clustered index record
-@param[in]	clust_index	clustered index
-@param[in]	rec		secondary index record
-@param[in]	index		secondary index
-@param[in]	offsets		rec_get_offsets(rec, index)
-@param[in,out]	mtr		mini-transaction
-@return	the active transaction; state must be rechecked after
+@param caller_trx            trx of current thread
+@param clust_rec             clustered index record
+@param clust_index           clustered index
+@param rec                   secondary index record
+@param index                 secondary index
+@param offsets               rec_get_offsets(rec, index)
+@param mtr                   mini-transaction
+@param caller_owns_trx_mutex true if caller already holds trx->mutex, false
+                             otherwise
+@return the active transaction; state must be rechecked after
 acquiring trx->mutex, and trx->release_reference() must be invoked
-@retval	NULL if the record was committed */
-UNIV_INLINE
-trx_t*
-row_vers_impl_x_locked_low(
-	trx_t*		caller_trx,
-	const rec_t*	clust_rec,
-	dict_index_t*	clust_index,
-	const rec_t*	rec,
-	dict_index_t*	index,
-	const rec_offs*	offsets,
-	mtr_t*		mtr)
+@retval NULL if the record was committed */
+static inline trx_t *
+row_vers_impl_x_locked_low(trx_t *caller_trx, const rec_t *clust_rec,
+                           dict_index_t *clust_index, const rec_t *rec,
+                           dict_index_t *index, const rec_offs *offsets,
+                           mtr_t *mtr, bool caller_owns_trx_mutex)
 {
 	trx_id_t	trx_id;
 	rec_t*		prev_version = NULL;
@@ -197,10 +194,12 @@ row_vers_impl_x_locked_low(
 			heap, &prev_version, mtr, 0, NULL,
 			dict_index_has_virtual(index) ? &vrow : NULL);
 
-		ut_d(trx->mutex_lock());
+		if (!caller_owns_trx_mutex)
+			ut_d(trx->mutex_lock());
 		const bool committed = trx_state_eq(
 			trx, TRX_STATE_COMMITTED_IN_MEMORY);
-		ut_d(trx->mutex_unlock());
+		if (!caller_owns_trx_mutex)
+			ut_d(trx->mutex_unlock());
 
 		/* The oldest visible clustered index version must not be
 		delete-marked, because we never start a transaction by
@@ -381,19 +380,18 @@ result_check:
 
 /** Determine if an active transaction has inserted or modified a secondary
 index record.
-@param[in,out]	caller_trx	trx of current thread
-@param[in]	rec	secondary index record
-@param[in]	index	secondary index
-@param[in]	offsets	rec_get_offsets(rec, index)
-@return	the active transaction; state must be rechecked after
+@param caller_trx            trx of current thread
+@param rec                   secondary index record
+@param index                 secondary index
+@param offsets               rec_get_offsets(rec, index)
+@param caller_owns_trx_mutex true if caller already holds trx->mutex, false
+                             otherwise
+@return the active transaction; state must be rechecked after
 acquiring trx->mutex, and trx->release_reference() must be invoked
-@retval	NULL if the record was committed */
-trx_t*
-row_vers_impl_x_locked(
-	trx_t*		caller_trx,
-	const rec_t*	rec,
-	dict_index_t*	index,
-	const rec_offs*	offsets)
+@retval NULL if the record was committed */
+trx_t *row_vers_impl_x_locked(trx_t *caller_trx, const rec_t *rec,
+                              dict_index_t *index, const rec_offs *offsets,
+                              bool caller_owns_trx_mutex)
 {
 	mtr_t		mtr;
 	trx_t*		trx;
@@ -431,7 +429,7 @@ row_vers_impl_x_locked(
 	} else {
 		trx = row_vers_impl_x_locked_low(
 				caller_trx, clust_rec, clust_index, rec, index,
-				offsets, &mtr);
+				offsets, &mtr, caller_owns_trx_mutex);
 
 		ut_ad(trx == 0 || trx->is_referenced());
 	}

@@ -5182,7 +5182,7 @@ wrong_offs:
 					goto locks_ok_del_marked;
 				}
 			} else if (trx_t* t = row_vers_impl_x_locked(
-					   trx, rec, index, offsets)) {
+					   trx, rec, index, offsets, true)) {
 				/* The record belongs to an active
 				transaction. We must acquire a lock. */
 				t->release_reference();

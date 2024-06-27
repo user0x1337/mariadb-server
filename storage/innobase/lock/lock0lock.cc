@@ -1168,21 +1168,22 @@ static lock_t *lock_rec_other_has_conflicting(unsigned mode,
 	return(NULL);
 }
 
-/*********************************************************************//**
-Checks if some transaction has an implicit x-lock on a record in a secondary
-index.
+/** Checks if some transaction has an implicit x-lock on a record in a
+secondary index.
+@param caller_trx            trx of current thread
+@param rec                   user record
+@param index                 secondary index
+@param offsets               rec_get_offsets(rec, index)
+@param caller_owns_trx_mutex true if caller already holds caller_trx->mutex,
+                             false otherwise
 @return transaction id of the transaction which has the x-lock, or 0;
 NOTE that this function can return false positives but never false
 negatives. The caller must confirm all positive results by calling
 trx_is_active(). */
-static
-trx_t*
-lock_sec_rec_some_has_impl(
-/*=======================*/
-	trx_t*		caller_trx,/*!<in/out: trx of current thread */
-	const rec_t*	rec,	/*!< in: user record */
-	dict_index_t*	index,	/*!< in: secondary index */
-	const rec_offs*	offsets)/*!< in: rec_get_offsets(rec, index) */
+static trx_t *lock_sec_rec_some_has_impl(trx_t *caller_trx, const rec_t *rec,
+                                         dict_index_t *index,
+                                         const rec_offs *offsets,
+                                         bool caller_owns_trx_mutex= false)
 {
   lock_sys.assert_unlocked();
   ut_ad(!dict_index_is_clust(index));
@@ -1202,7 +1203,8 @@ lock_sec_rec_some_has_impl(
   that is older than PAGE_MAX_TRX_ID. That is, some transaction may be
   holding an implicit lock on the record. We have to look up the
   clustered index record to find if it is (or was) the case. */
-  return row_vers_impl_x_locked(caller_trx, rec, index, offsets);
+  return row_vers_impl_x_locked(caller_trx, rec, index, offsets,
+                                caller_owns_trx_mutex);
 }
 
 /*********************************************************************//**
@@ -4500,7 +4502,9 @@ static void lock_rec_unlock_unmodified(hash_cell_t &cell, lock_t *lock,
   {
     if (UNIV_UNLIKELY(!page_is_leaf(block->page.frame)))
     {
-      ut_ad("corrupted lock system" == 0);
+      /* There can be locks with clean bitmap on non-leaf pages in the case of
+      page split. See lock_move_rec_list_end() call stack for details. */
+      ut_ad(lock_rec_find_set_bit(lock) == ULINT_UNDEFINED);
       goto func_exit;
     }
 
@@ -4522,8 +4526,15 @@ static void lock_rec_unlock_unmodified(hash_cell_t &cell, lock_t *lock,
         {
           offsets= rec_get_offsets(rec, index, offsets, index->n_core_fields,
                                    ULINT_UNDEFINED, &heap);
-          if (lock->trx !=
-              lock_sec_rec_some_has_impl(lock->trx, rec, index, offsets))
+          trx_t *impl_trx=
+              lock_sec_rec_some_has_impl(lock->trx, rec, index, offsets, true);
+          /* row_vers_impl_x_locked_low() references trx in both cases, i.e.
+          when caller trx is equal to trx, which modified the record, it
+          references the trx directly, otherwise it invokes trx_sys.find(),
+          which also references trx, so the trx must be released anyway. */
+          if (impl_trx)
+            impl_trx->release_reference();
+          if (lock->trx != impl_trx)
             goto unlock_rec;
         }
       }
@@ -4573,8 +4584,6 @@ static bool lock_release_on_prepare_try(trx_t *trx)
       bool supremum_bit= lock_rec_get_nth_bit(lock, PAGE_HEAP_NO_SUPREMUM);
       bool rec_granted_exclusive_not_gap=
         lock->is_rec_granted_exclusive_not_gap();
-      if (!supremum_bit && rec_granted_exclusive_not_gap)
-        continue;
       if (UNIV_UNLIKELY(lock->type_mode & (LOCK_PREDICATE | LOCK_PRDT_PAGE)))
         continue; /* SPATIAL INDEX locking is broken. */
       auto cell=
