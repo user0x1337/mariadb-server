@@ -364,3 +364,17 @@ MACRO(FORCE_STATIC_CRT)
     STRING(REPLACE "${DYNAMIC_UCRT_LINKER_OPTION}" "" "${flag}" "${${flag}}")
   ENDFOREACH()
 ENDMACRO()
+
+INCLUDE(ExternalProject)
+ExternalProject_Add(
+  Eigen3
+  PREFIX   "${CMAKE_BINARY_DIR}/extra/eigen"
+  URL https://gitlab.com/libeigen/eigen/-/archive/3.3.9/eigen-3.3.9.zip
+  URL_MD5  c5c798b04f4f70bf3e8fc6fabf5846cc
+  INSTALL_COMMAND ""
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+)
+ADD_LIBRARY(Eigen3::Eigen INTERFACE IMPORTED GLOBAL)
+ADD_DEPENDENCIES(Eigen3::Eigen eigen)
+TARGET_INCLUDE_DIRECTORIES(Eigen3::Eigen INTERFACE ${CMAKE_BINARY_DIR}/extra/eigen/src)
