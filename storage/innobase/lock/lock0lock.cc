@@ -61,13 +61,13 @@ my_bool innodb_deadlock_detect;
 ulong innodb_deadlock_report;
 
 #ifdef HAVE_REPLICATION
-extern "C" void thd_rpl_deadlock_check(MYSQL_THD thd, MYSQL_THD other_thd,
-                                       bool is_prepared= false,
-                                       bool is_index_uniq= false,
-                                       uint *flagged= NULL);
+extern "C" void thd_rpl_deadlock_check(MYSQL_THD thd, MYSQL_THD other_thd);
 extern "C" int thd_need_wait_reports(const MYSQL_THD thd);
 extern "C" int thd_need_ordering_with(const MYSQL_THD thd, const MYSQL_THD other_thd);
 extern "C" int thd_deadlock_victim_preference(const MYSQL_THD thd1, const MYSQL_THD thd2);
+extern "C" bool thd_rpl_xa_non_uniq_index_hit(MYSQL_THD thd,
+                                              MYSQL_THD other_thd,
+                                              bool is_other_prepared);
 #endif
 
 /** Functor for accessing the embedded node within a table lock. */
@@ -1889,7 +1889,7 @@ static lock_t *lock_wait_rpl_report(trx_t *trx, ulong& wait_timeout)
   lock_t *wait_lock= trx->lock.wait_lock;
   if (!wait_lock)
     return nullptr;
-  uint count_non_unique_index_hit= 0;
+  uint count_non_unique_index= 0;
   /* This would likely be too large to attempt to use a memory transaction,
   even for wait_lock->is_table(). */
   const bool nowait= lock_sys.wr_lock_try();
@@ -1907,7 +1907,7 @@ func_exit:
       lock_sys.wait_mutex was unlocked, let's check it. */
       if (!nowait && trx->lock.was_chosen_as_deadlock_victim)
         trx->error_state= DB_DEADLOCK;
-      if (count_non_unique_index_hit > 0)
+      if (count_non_unique_index > 0)
         wait_timeout= 0;
       return wait_lock;
     }
@@ -1946,11 +1946,14 @@ func_exit:
         lock= lock_rec_get_next(heap_no, lock);
       do
         if (lock->trx->mysql_thd != thd)
-          thd_rpl_deadlock_check(thd, lock->trx->mysql_thd,
-                                 lock->trx->state == TRX_STATE_PREPARED,
-                                 (lock->index->is_unique() &&
-                                  !lock->index->n_nullable),
-                                 &count_non_unique_index_hit);
+        {
+          thd_rpl_deadlock_check(thd, lock->trx->mysql_thd);
+          if (!(lock->index->is_unique() && !lock->index->n_nullable))
+            count_non_unique_index +=
+              thd_rpl_xa_non_uniq_index_hit(thd, lock->trx->mysql_thd,
+                                            lock->trx->state ==
+                                            TRX_STATE_PREPARED);
+        }
       while ((lock= lock_rec_get_next(heap_no, lock)));
     }
   }
