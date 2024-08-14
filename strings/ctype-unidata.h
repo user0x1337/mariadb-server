@@ -18,6 +18,24 @@
 */
 
 
+/*
+  Check if a character belongs to an assigned plane.
+
+  As of version Unicode-14.0.0, the planes are assigned as follows:
+  0000-FFFF    BMP        Plane 0        Basic Multilingual Plane
+  10000-1FFFF  SMP        Plane 1        Supplementary Multilingual Plane
+  20000-2FFFF  SIP        Plane 2        Supplementary Ideographic Plane
+  30000-3FFFF  TIP        Plane 3        Tertiary Ideographic Plane
+  40000-DFFFF             Unassigned
+  E0000-EFFFF  SSP        Plane 14       Supplementary Special-purpose Plane
+  F0000-10FFFF SPUA-A/B   Planes 15–16   Supplementary Private Use Area planes
+*/
+static inline my_bool my_wc_belongs_to_assigned_plane_unicode1400(my_wc_t wc)
+{
+  return wc <= 0x3FFFF || (wc >=0xE0000 && wc <= 0x10FFFF);
+}
+
+
 extern const uint16 weight_general_ci_page00[256];
 extern const uint16 *weight_general_ci_index[256];
 extern const uint16 weight_general_mysql500_ci_page00[256];

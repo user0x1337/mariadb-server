@@ -1945,7 +1945,7 @@ SET NAMES utf8mb4;
 --echo #
 SET NAMES utf8mb4;
 --error ER_INVALID_CHARACTER_STRING
-SELECT * FROM `test😁😁test`;
+EXECUTE IMMEDIATE CONCAT('SELECT * FROM `', 0xFF, '`');
 
 --echo #
 --echo # MDEV-7231 Field ROUTINE_DEFINITION in INFORMATION_SCHEMA.`ROUTINES` contains broken procedure body when used shielding quotes inside.

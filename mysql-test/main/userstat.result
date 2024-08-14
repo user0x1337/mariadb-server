@@ -59,15 +59,15 @@ TOTAL_SSL_CONNECTIONS	bigint(21) unsigned	NO		NULL
 MAX_STATEMENT_TIME_EXCEEDED	bigint(21)	NO		NULL	
 show columns from information_schema.index_statistics;
 Field	Type	Null	Key	Default	Extra
-TABLE_SCHEMA	varchar(192)	NO		NULL	
-TABLE_NAME	varchar(192)	NO		NULL	
-INDEX_NAME	varchar(192)	NO		NULL	
+TABLE_SCHEMA	varchar(256)	NO		NULL	
+TABLE_NAME	varchar(256)	NO		NULL	
+INDEX_NAME	varchar(256)	NO		NULL	
 ROWS_READ	bigint(21)	NO		NULL	
 QUERIES	bigint(21)	NO		NULL	
 show columns from information_schema.table_statistics;
 Field	Type	Null	Key	Default	Extra
-TABLE_SCHEMA	varchar(192)	NO		NULL	
-TABLE_NAME	varchar(192)	NO		NULL	
+TABLE_SCHEMA	varchar(256)	NO		NULL	
+TABLE_NAME	varchar(256)	NO		NULL	
 ROWS_READ	bigint(21)	NO		NULL	
 ROWS_CHANGED	bigint(21)	NO		NULL	
 ROWS_CHANGED_X_INDEXES	bigint(21)	NO		NULL	

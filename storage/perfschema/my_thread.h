@@ -88,7 +88,7 @@ static inline my_thread_os_id_t my_thread_os_id()
 #endif /* HAVE_PTHREAD_THREADID_NP */
 }
 
-#define CHANNEL_NAME_LENGTH MAX_CONNECTION_NAME
+#define CHANNEL_NAME_LENGTH CONNECTION_OCTET_LEN
 
 enum enum_mysql_show_scope
 {

@@ -2463,6 +2463,38 @@ static int hexlo(int x)
 
 
 /*
+  Base32hex-lcase encoding. It's similar to RFC4648's base32hex,
+  but uses small letters instread of capital letters.
+  The encoded data maintains its sort order when compared bit-wise.
+*/
+static const char to_b32hl[]= "0123456789abcdefghijklmnopqrstuv";
+
+static int from_b32hl(int x)
+{
+  static const signed char b32hl_digits[256]=
+  {
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* ................ */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* ................ */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /*  !"#$%&'()*+,-./ */
+     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,-1,-1,-1,-1,-1,-1, /* 0123456789:;<=>? */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* @ABCDEFGHIJKLMNO */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* PQRSTUVWXYZ[\]^_ */
+    -1,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24, /* `abcdefghijklmno */
+    25,26,27,28,29,30,31,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* pqrstuvwxyz{|}~. */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* ................ */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* ................ */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* ................ */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* ................ */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* ................ */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* ................ */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* ................ */
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, /* ................ */
+  };
+  return b32hl_digits[(unsigned int) x];
+}
+
+
+/*
   Safe characters:
    '\0'  NULL
    A..Z  capital letters,
@@ -2484,12 +2516,81 @@ static const char filename_safe_char[128]=
 
 #define MY_FILENAME_ESCAPE '@'
 
+
+/*
+  Encode a supplementary character using an encoding without
+  case-folding information.
+
+  Let's allow only assigned planes
+
+  Suppose the 20 bits of the character code point are:
+    yyyy xxxxxxxx zzzzzzzz
+
+  Let's encode them using the following components (6 bytes total):
+    [@][+][0-9a-v][0-9a-v][0-9a-v][0-9a-v]
+
+  where
+
+  1. [@]                              - the encoded character indicator
+  2. [-]                              - the 'without case mapping encoding'
+                                        indicator
+  3. [0-9a-v][0-9a-v][0-9a-v][0-9a-v] - the 20 bits encoded using
+                                        the base32hex-lcase encoding
+*/
+static inline int
+my_wc_mb_filename_at_plus(my_wc_t wc, uchar *s, uchar *e)
+{
+  DBUG_ASSERT(wc >= 0x10000);
+
+  wc-= 0x10000;/* Get a 20-bit offset in the range x00000..xFFFFF */
+
+  if (s + 6 > e)
+    return MY_CS_TOOSMALL6;
+  *s++= MY_FILENAME_ESCAPE;
+  *s++= '+';
+  *s++= to_b32hl[(wc >> 15) & 0x1F];
+  *s++= to_b32hl[(wc >> 10) & 0x1F];
+  *s++= to_b32hl[(wc >> 5)  & 0x1F];
+  *s++= to_b32hl[(wc)       & 0x1F];
+  return 6;
+}
+
+
+/*
+  Decode a @+xxxx sequence.
+*/
+static inline int
+my_mb_wc_filename_at_plus_tail(my_wc_t *pwc, const uchar *s, const uchar *e)
+{
+  int part[4];
+  if (s + 6 > e)
+    return MY_CS_TOOSMALL6;
+
+  part[0]= from_b32hl(s[2]);
+  part[1]= from_b32hl(s[3]);
+  part[2]= from_b32hl(s[4]);
+  part[3]= from_b32hl(s[5]);
+
+  if (part[0] < 0 || part[1] < 0 || part[2] < 0 || part[3] < 0)
+    return MY_CS_ILSEQ;
+
+  *pwc= 0x10000 + (part[0] << 15) +
+                  (part[1] << 10) +
+                  (part[2] << 5)  +
+                  part[3];
+  if (!my_wc_belongs_to_assigned_plane_unicode1400(*pwc))
+    return MY_CS_ILSEQ;
+
+  return 6;
+}
+
+
 /*
   note, that we cannot trust 'e' here, it's may be fake,
   see strconvert()
 */
 static int
-my_mb_wc_filename(CHARSET_INFO *cs __attribute__((unused)),
+my_mb_wc_filename(CHARSET_INFO *cs,
                   my_wc_t *pwc, const uchar *s, const uchar *e)
 {
   int byte1, byte2;
@@ -2507,7 +2608,10 @@ my_mb_wc_filename(CHARSET_INFO *cs __attribute__((unused)),
   
   if (s + 3 > e)
     return MY_CS_TOOSMALL3;
-  
+
+  if (s[1] == '+')
+    return my_mb_wc_filename_at_plus_tail(pwc, s, e);
+
   byte1= s[1];
   if (byte1 == 0)
     return MY_CS_ILSEQ; /* avoid possible out-of-bounds read */
@@ -2549,7 +2653,7 @@ my_mb_wc_filename(CHARSET_INFO *cs __attribute__((unused)),
 
 
 static int
-my_wc_mb_filename(CHARSET_INFO *cs __attribute__((unused)),
+my_wc_mb_filename(CHARSET_INFO *cs,
                   my_wc_t wc, uchar *s, uchar *e)
 {
   int code;
@@ -2563,7 +2667,14 @@ my_wc_mb_filename(CHARSET_INFO *cs __attribute__((unused)),
     *s= (uchar) wc;
     return 1;
   }
-  
+
+  if (wc > 0xFFFF)
+  {
+    if (!my_wc_belongs_to_assigned_plane_unicode1400(wc))
+      return MY_CS_ILUNI;
+    return my_wc_mb_filename_at_plus(wc, s, e);
+  }
+
   if (s + 3 > e)
     return MY_CS_TOOSMALL3;
 
@@ -2708,7 +2819,7 @@ struct charset_info_st my_charset_filename=
     NULL,               /* ident_map    */
     1,                  /* strxfrm_multiply */
     1,                  /* mbminlen     */
-    5,                  /* mbmaxlen     */
+    FILENAME_CHARSET_MBMAXLEN,/* mbmaxlen */
     0,                  /* min_sort_char */
     0xFFFF,             /* max_sort_char */
     ' ',                /* pad char      */

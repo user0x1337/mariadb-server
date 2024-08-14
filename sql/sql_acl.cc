@@ -2532,7 +2532,7 @@ bool acl_init(bool dont_read_acl_tables)
   acl_cache= new Hash_filo<acl_entry>(key_memory_acl_cache, ACL_CACHE_SIZE, 0, 0,
                            (my_hash_get_key) acl_entry_get_key,
                            (my_hash_free_key) my_free,
-                           &my_charset_utf8mb3_bin);
+                           &my_charset_utf8mb4_bin);
 
   /*
     cache built-in native authentication plugins,
@@ -3018,11 +3018,11 @@ bool acl_reload(THD *thd)
   my_init_dynamic_array(key_memory_acl_mem, &acl_users, sizeof(ACL_USER), 50, 100, MYF(0));
   acl_dbs.init(key_memory_acl_mem, 50, 100);
   my_init_dynamic_array(key_memory_acl_mem, &acl_proxy_users, sizeof(ACL_PROXY_USER), 50, 100, MYF(0));
-  my_hash_init2(key_memory_acl_mem, &acl_roles,50, &my_charset_utf8mb3_bin,
+  my_hash_init2(key_memory_acl_mem, &acl_roles,50, &my_charset_utf8mb4_bin,
                 0, 0, 0, (my_hash_get_key) acl_role_get_key, 0,
                 (void (*)(void *))free_acl_role, 0);
   my_hash_init2(key_memory_acl_mem, &acl_roles_mappings, 50,
-                &my_charset_utf8mb3_bin, 0, 0, 0, (my_hash_get_key)
+                &my_charset_utf8mb4_bin, 0, 0, 0, (my_hash_get_key)
                 acl_role_map_get_key, 0, 0, 0);
   old_mem= acl_memroot;
   delete_dynamic(&acl_wild_hosts);
@@ -4572,7 +4572,7 @@ static ACL_ROLE *find_acl_role(const LEX_CSTRING &role, bool allow_public)
 
   if (!role.length ||
       (!allow_public &&
-       my_charset_utf8mb3_general1400_as_ci.streq(role, public_name)))
+       my_charset_utf8mb4_general1400_as_ci.streq(role, public_name)))
     DBUG_RETURN(NULL);
 
   ACL_ROLE *r= (ACL_ROLE *)my_hash_search(&acl_roles, (uchar *)role.str,
@@ -5578,7 +5578,8 @@ void GRANT_NAME::set_user_details(const char *h, const char *d,
   {
     DBUG_ASSERT(d);
     db= lower_case_table_names ?
-        lex_string_casedn_root(&grant_memroot, files_charset_info,
+        lex_string_casedn_root(&grant_memroot,
+                               &my_charset_utf8mb4_general_ci,
                                d, strlen(d)).str :
         strdup_root(&grant_memroot, d);
   }
@@ -5588,7 +5589,8 @@ void GRANT_NAME::set_user_details(const char *h, const char *d,
   {
     DBUG_ASSERT(t);
     tname= lower_case_table_names || is_routine ?
-           lex_string_casedn_root(&grant_memroot, files_charset_info,
+           lex_string_casedn_root(&grant_memroot,
+                                  &my_charset_utf8mb4_general_ci,
                                   t, strlen(t)).str :
            strdup_root(&grant_memroot, t);
   }
@@ -5777,7 +5779,8 @@ static GRANT_NAME *name_hash_search(HASH *name_hash,
 
   key.append(Lex_cstring_strlen(user)).append_char('\0')
      .append(Lex_cstring_strlen(db)).append_char('\0')
-     .append_opt_casedn(files_charset_info, Lex_cstring_strlen(tname),
+     .append_opt_casedn(&my_charset_utf8mb4_general_ci,
+                        Lex_cstring_strlen(tname),
                         name_tolower);
   key.append_char('\0');
   if (key.length() > key_data_size)
@@ -6211,6 +6214,7 @@ static int replace_routine_table(THD *thd, GRANT_NAME *grant_name,
 			      const Sp_handler *sph,
 			      privilege_t rights, bool revoke_grant)
 {
+  CHARSET_INFO *syscs= &my_charset_utf8mb4_general_ci;
   char grantor[USER_HOST_BUFF_SIZE];
   int old_row_exists= 1;
   int error=0;
@@ -6240,11 +6244,10 @@ static int replace_routine_table(THD *thd, GRANT_NAME *grant_name,
 
   table->use_all_columns();
   restore_record(table, s->default_values);            // Get empty record
-  table->field[0]->store(combo.host.str,combo.host.length, &my_charset_latin1);
-  table->field[1]->store(db,(uint) strlen(db), &my_charset_latin1);
-  table->field[2]->store(combo.user.str,combo.user.length, &my_charset_latin1);
-  table->field[3]->store(routine_name,(uint) strlen(routine_name),
-                         &my_charset_latin1);
+  table->field[0]->store(combo.host.str,combo.host.length, syscs);
+  table->field[1]->store(db,(uint) strlen(db), syscs);
+  table->field[2]->store(combo.user.str,combo.user.length, syscs);
+  table->field[3]->store(routine_name,(uint) strlen(routine_name), syscs);
   table->field[4]->store((longlong) sph->type(), true);
   store_record(table,record[1]);			// store at pos 1
 
@@ -6288,7 +6291,7 @@ static int replace_routine_table(THD *thd, GRANT_NAME *grant_name,
     }
   }
 
-  table->field[5]->store(grantor,(uint) strlen(grantor), &my_charset_latin1);
+  table->field[5]->store(grantor,(uint) strlen(grantor), syscs);
   table->field[6]->store((longlong) store_proc_rights, TRUE);
   rights=fix_rights_for_procedure(store_proc_rights);
 
@@ -8170,19 +8173,19 @@ static bool grant_load(THD *thd,
   Sql_mode_instant_remove sms(thd, MODE_PAD_CHAR_TO_FULL_LENGTH);
 
   (void) my_hash_init(key_memory_acl_memex, &column_priv_hash,
-                      &my_charset_utf8mb3_bin, 0,0,0, (my_hash_get_key)
+                      &my_charset_utf8mb4_bin, 0,0,0, (my_hash_get_key)
                       get_grant_table, (my_hash_free_key) free_grant_table, 0);
   (void) my_hash_init(key_memory_acl_memex, &proc_priv_hash,
-                      &my_charset_utf8mb3_bin, 0,0,0, (my_hash_get_key)
+                      &my_charset_utf8mb4_bin, 0,0,0, (my_hash_get_key)
                       get_grant_table, 0,0);
   (void) my_hash_init(key_memory_acl_memex, &func_priv_hash,
-                      &my_charset_utf8mb3_bin, 0,0,0, (my_hash_get_key)
+                      &my_charset_utf8mb4_bin, 0,0,0, (my_hash_get_key)
                       get_grant_table, 0,0);
   (void) my_hash_init(key_memory_acl_memex, &package_spec_priv_hash,
-                      &my_charset_utf8mb3_bin, 0,0,0, (my_hash_get_key)
+                      &my_charset_utf8mb4_bin, 0,0,0, (my_hash_get_key)
                       get_grant_table, 0,0);
   (void) my_hash_init(key_memory_acl_memex, &package_body_priv_hash,
-                      &my_charset_utf8mb3_bin, 0,0,0, (my_hash_get_key)
+                      &my_charset_utf8mb4_bin, 0,0,0, (my_hash_get_key)
                       get_grant_table, 0,0);
   init_sql_alloc(key_memory_acl_mem, &grant_memroot, ACL_ALLOC_BLOCK_SIZE, 0, MYF(0));
 

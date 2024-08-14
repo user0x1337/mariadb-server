@@ -5773,8 +5773,8 @@ int mysqld_main(int argc, char **argv)
   remaining_argv= argv;
 
   /* Must be initialized early for comparison of options name */
-  system_charset_info= &my_charset_utf8mb3_general1400_as_ci;
-  system_charset_info_for_i_s= &my_charset_utf8mb3_general_ci;
+  system_charset_info= &my_charset_utf8mb4_general1400_as_ci;
+  system_charset_info_for_i_s= &my_charset_utf8mb4_general_ci;
 
   sys_var_init();
 
@@ -7994,8 +7994,8 @@ static int mysql_init_variables(void)
   key_map_full.set_all();
 
   /* Character sets */
-  system_charset_info= &my_charset_utf8mb3_general1400_as_ci;
-  system_charset_info_for_i_s= &my_charset_utf8mb3_general_ci;
+  system_charset_info= &my_charset_utf8mb4_general1400_as_ci;
+  system_charset_info_for_i_s= &my_charset_utf8mb4_general_ci;
   files_charset_info= &my_charset_utf8mb3_general1400_as_ci;
   national_charset_info= &my_charset_utf8mb3_general_ci;
   table_alias_charset= &my_charset_bin;

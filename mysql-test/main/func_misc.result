@@ -816,26 +816,26 @@ disconnect con1;
 connection default;
 drop table t1;
 # check too long identifier names
-select get_lock(repeat('a', 192), 0);
-get_lock(repeat('a', 192), 0)
+select get_lock(repeat('a', 64), 0);
+get_lock(repeat('a', 64), 0)
 1
-select is_used_lock(repeat('a', 192)) = connection_id();
-is_used_lock(repeat('a', 192)) = connection_id()
+select is_used_lock(repeat('a', 64)) = connection_id();
+is_used_lock(repeat('a', 64)) = connection_id()
 1
-select is_free_lock(repeat('a', 192));
-is_free_lock(repeat('a', 192))
+select is_free_lock(repeat('a', 64));
+is_free_lock(repeat('a', 64))
 0
-select release_lock(repeat('a', 192));
-release_lock(repeat('a', 192))
+select release_lock(repeat('a', 64));
+release_lock(repeat('a', 64))
 1
-select get_lock(repeat('a', 193), 0);
-ERROR 42000: Identifier name 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...' is too long
-select is_used_lock(repeat('a', 193));
-ERROR 42000: Identifier name 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...' is too long
-select is_free_lock(repeat('a', 193));
-ERROR 42000: Identifier name 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...' is too long
-select release_lock(repeat('a', 193));
-ERROR 42000: Identifier name 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...' is too long
+select get_lock(repeat('a', 65), 0);
+ERROR 42000: Identifier name 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' is too long
+select is_used_lock(repeat('a', 65));
+ERROR 42000: Identifier name 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' is too long
+select is_free_lock(repeat('a', 65));
+ERROR 42000: Identifier name 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' is too long
+select release_lock(repeat('a', 65));
+ERROR 42000: Identifier name 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' is too long
 
 # --
 # -- WL#5787: IPv6-capable INET_ATON and INET_NTOA functions.

@@ -142,7 +142,7 @@ class Varchar: public Type
 public:
   Varchar(uint length) :Type(&type_handler_varchar, length, false)
   {
-    DBUG_ASSERT(length * 3 <= MAX_FIELD_VARCHARLENGTH);
+    DBUG_ASSERT(length * 4 <= MAX_FIELD_VARCHARLENGTH);
   }
 };
 

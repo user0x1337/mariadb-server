@@ -1862,10 +1862,10 @@ localhost	root	{"access":18446744073709551615}
 CHECKSUM TABLE mysql.roles_mapping, mysql.time_zone_transition, mysql.plugin,
 mysql.servers, mysql.func, mysql.innodb_table_stats, mysql.table_stats;
 Table	Checksum
-mysql.roles_mapping	2510045525
+mysql.roles_mapping	367100483
 mysql.time_zone_transition	3719776009
 mysql.plugin	1587119305
-mysql.servers	2079085450
+mysql.servers	4243297737
 mysql.func	3241572444
 mysql.innodb_table_stats	1972297402
 mysql.table_stats	1911089388
@@ -1897,10 +1897,10 @@ localhost	root	{"access":1099511627775,"version_id":VERSION,"plugin":"mysql_nati
 CHECKSUM TABLE mysql.roles_mapping, mysql.time_zone_transition, mysql.plugin,
 mysql.servers, mysql.func, mysql.innodb_table_stats, mysql.table_stats;
 Table	Checksum
-mysql.roles_mapping	2510045525
+mysql.roles_mapping	367100483
 mysql.time_zone_transition	3719776009
 mysql.plugin	1587119305
-mysql.servers	2079085450
+mysql.servers	4243297737
 mysql.func	3241572444
 mysql.innodb_table_stats	1972297402
 mysql.table_stats	1911089388

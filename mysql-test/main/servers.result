@@ -1,4 +1,5 @@
 set sql_mode="";
+SET NAMES utf8mb4;
 #
 # MDEV-4594 - CREATE SERVER crashes embedded
 #
@@ -24,3 +25,32 @@ SELECT * FROM mysql.servers;
 Server_name	Host	Db	Username	Password	Port	Socket	Wrapper	Owner
 s1					3306	bar	mysql	
 DROP SERVER s1;
+#
+# Start of 11.7 tests
+#
+#
+# MDEV-27490 Allow full utf8mb4 for identifiers
+#
+CREATE SERVER 😎 FOREIGN DATA WRAPPER 😎
+OPTIONS(
+HOST '😎',
+DATABASE '😎',
+USER '😎',
+PASSWORD '😎',
+SOCKET '/tmp/😎.sock',
+OWNER '😎'
+);
+SELECT * FROM mysql.servers;
+Server_name	😎
+Host	😎
+Db	😎
+Username	😎
+Password	😎
+Port	0
+Socket	/tmp/😎.sock
+Wrapper	😎
+Owner	😎
+DROP SERVER 😎;
+#
+# End of 11.7 tests
+#

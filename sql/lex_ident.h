@@ -43,7 +43,7 @@ struct Compare_ident_ci
 {
   CHARSET_INFO *charset_info() const
   {
-    return &my_charset_utf8mb3_general1400_as_ci;
+    return &my_charset_utf8mb4_general1400_as_ci;
   }
 };
 
@@ -438,7 +438,7 @@ class IdentBuffer: public CharBuffer<buff_sz>
 {
   constexpr static CHARSET_INFO *charset()
   {
-    return &my_charset_utf8mb3_general_ci;
+    return &my_charset_utf8mb4_general_ci;
   }
 public:
   IdentBuffer()
@@ -480,7 +480,7 @@ public:
   { }
   DBNameBuffer(const LEX_CSTRING &db, bool casedn)
   {
-    copy_casedn(&my_charset_utf8mb3_general_ci, db, casedn);
+    copy_casedn(&my_charset_utf8mb4_general_ci, db, casedn);
   }
   Lex_ident_db to_lex_ident_db() const
   {
@@ -551,7 +551,7 @@ public:
   size_t make_sep_name_casedn(char *dst, size_t dst_size, int sep) const
   {
     DBUG_ASSERT(dst_size >= min_sep_name_size());
-    CHARSET_INFO *cs= &my_charset_utf8mb3_general_ci;
+    CHARSET_INFO *cs= &my_charset_utf8mb4_general_ci;
     char *ptr= dst, *end= dst + dst_size;
     ptr+= cs->casedn(m_name[0].str, m_name[0].length, ptr, end - ptr - 2);
     *ptr++= (char) sep;
@@ -563,7 +563,7 @@ public:
   size_t make_sep_name_casedn_part1(char *dst, size_t dst_size, int sep) const
   {
     DBUG_ASSERT(dst_size >= min_sep_name_size());
-    CHARSET_INFO *cs= &my_charset_utf8mb3_general_ci;
+    CHARSET_INFO *cs= &my_charset_utf8mb4_general_ci;
     char *ptr= dst, *end= dst + dst_size;
     ptr+= cs->opt_casedn(m_name[0].str, m_name[0].length,
                          ptr, end - ptr - 2, false);
@@ -586,6 +586,7 @@ public:
   size_t make_sep_name_opt_casedn(char *dst, size_t dst_size,
                                   int sep, bool casedn) const
   {
+    // TODO: check this assert
     DBUG_ASSERT(m_name[0].length + m_name[1].length + 2 < FN_REFLEN - 1);
     return casedn ? make_sep_name_casedn(dst, dst_size, sep) :
                     make_sep_name(dst, dst_size, sep);

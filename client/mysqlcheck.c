@@ -453,20 +453,20 @@ static int get_options(int *argc, char ***argv)
 
   /*
     If there's no --default-character-set option given with
-    --fix-table-name or --fix-db-name set the default character set to "utf8".
+    --fix-table-name or --fix-db-name set the default character set to "utf8mb4".
   */
   if (!default_charset)
   {
     if (opt_fix_db_names || opt_fix_table_names)
-      default_charset= (char*) "utf8";
+      default_charset= (char*) "utf8mb4";
     else
       default_charset= (char*) MYSQL_AUTODETECT_CHARSET_NAME;
   }
+  // TODO: 
   if (!strcmp(default_charset, MYSQL_AUTODETECT_CHARSET_NAME))
     default_charset= (char *)my_default_csname();
 
-  if (!get_charset_by_csname(default_charset, MY_CS_PRIMARY,
-                             MYF(MY_UTF8_IS_UTF8MB3 | MY_WME)))
+  if (!get_charset_by_csname(default_charset, MY_CS_PRIMARY, MYF(MY_WME)))
   {
     printf("Unsupported character set: %s\n", default_charset);
     DBUG_RETURN(1);

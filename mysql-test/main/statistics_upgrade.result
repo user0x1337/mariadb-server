@@ -69,7 +69,7 @@ column_stats	CREATE TABLE `column_stats` (
   `hist_type` enum('SINGLE_PREC_HB','DOUBLE_PREC_HB','JSON_HB') DEFAULT NULL,
   `histogram` longblob DEFAULT NULL,
   PRIMARY KEY (`db_name`,`table_name`,`column_name`)
-) ENGINE=Aria DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin PAGE_CHECKSUM=1 TRANSACTIONAL=0 COMMENT='Statistics on Columns'
+) ENGINE=Aria DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin PAGE_CHECKSUM=1 TRANSACTIONAL=0 COMMENT='Statistics on Columns'
 select 
 A.db_name, 
 A.table_name, 
@@ -88,4 +88,4 @@ drop table t1,t2,t4;
 #
 # MDEV-28866 mariadb-upgrade to 10.8 mysql.column_stats hist_type + histogram errors
 #
-FOUND 2 /Incorrect definition of table mysql.column_stats:/ in mysqld.1.err
+FOUND 5 /Incorrect definition of table mysql.column_stats:/ in mysqld.1.err

@@ -7,6 +7,7 @@
 set sql_mode="";
 
 call mtr.add_suppression("Incorrect definition of table mysql.column_stats:.*");
+call mtr.add_suppression("Incorrect definition of table mysql.table_stats:.*");
 
 # It should create a file in the MySQL Servers datadir
 let $MYSQLD_DATADIR= `select @@datadir`;

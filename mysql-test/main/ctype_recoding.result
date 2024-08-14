@@ -162,7 +162,7 @@ Field	Type	Null	Key	Default	Extra
 DROP TABLE t1;
 SET NAMES binary;
 CREATE TABLE `good–Ãœ»œ` (a int);
-ERROR HY000: Invalid utf8mb3 character string: 'good\xD0\xCC\xCF\xC8\xCF'
+ERROR HY000: Invalid utf8mb4 character string: 'good\xD0\xCC\xCF\xC8\xCF'
 SET NAMES utf8;
 CREATE TABLE `good–Ãœ»œ` (a int);
 ERROR HY000: Invalid utf8mb3 character string: 'good\xD0\xCC\xCF\xC8\xCF'

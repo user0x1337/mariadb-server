@@ -219,12 +219,12 @@ c3 INT;
 --cat_file $MYSQL_DATA_DIR.files.txt
 --remove_file $MYSQL_DATA_DIR.files.txt
 
-# test with 4-byte UTF-8 (should be disallowed)
---error ER_INVALID_CHARACTER_STRING
+# test with 4-byte UTF-8
 ALTER TABLE t3 CHANGE c3 𐌀𐌁𐌂𐌃𐌄𐌅𐌆𐌇𐌈𐌉𐌊𐌋𐌌𐌍𐌎𐌏𐌐𐌑𐌒𐌓𐌔𐌕𐌖𐌗𐌘𐌙𐌚𐌛𐌜 INT;
+ALTER TABLE t3 CHANGE 𐌀𐌁𐌂𐌃𐌄𐌅𐌆𐌇𐌈𐌉𐌊𐌋𐌌𐌍𐌎𐌏𐌐𐌑𐌒𐌓𐌔𐌕𐌖𐌗𐌘𐌙𐌚𐌛𐌜 c3 INT;
 
---error ER_INVALID_CHARACTER_STRING
 ALTER TABLE t3 CHANGE c3 😲 INT;
+ALTER TABLE t3 CHANGE 😲 c3 INT;
 
 ALTER TABLE t3 RENAME TO t2;
 

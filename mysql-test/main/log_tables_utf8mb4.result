@@ -1,0 +1,50 @@
+SET @old_log_output=       @@global.log_output;
+SET @old_slow_query_log=   @@global.slow_query_log;
+SET @old_general_log=      @@global.general_log;
+SET @old_long_query_time=  @@session.long_query_time;
+#
+# MDEV-27490 Allow full utf8mb4 for identifiers
+#
+SET NAMES utf8mb4;
+TRUNCATE TABLE mysql.general_log;
+TRUNCATE TABLE mysql.slow_log;
+SET @@global.log_output= 'TABLE';
+SET @@global.general_log='ON';
+SET @@global.slow_query_log='ON';
+CREATE DATABASE 😎;
+USE 😎;
+SET long_query_time=0.1;
+SELECT user(), sleep(0.2) AS `😎`;
+user()	😎
+root@localhost	0
+USE test;
+CREATE USER 😎@localhost;
+GRANT ALL PRIVILEGES ON 😎.* TO 😎@localhost;
+connect  con1,localhost,😎,,😎;
+SELECT @@character_set_client;
+@@character_set_client
+utf8mb4
+SET long_query_time=0.1;
+SELECT user(), sleep(0.2) AS `😎`;
+user()	😎
+😎@localhost	0
+disconnect con1;
+connection default;
+DROP USER 😎@localhost;
+DROP DATABASE 😎;
+FLUSH LOGS;
+SELECT user_host, command_type, argument FROM mysql.general_log
+WHERE argument LIKE '%sleep%';
+user_host	command_type	argument
+root[root] @ localhost []	Query	SELECT user(), sleep(0.2) AS `😎`
+😎[😎] @ localhost []	Query	SELECT user(), sleep(0.2) AS `😎`
+root[root] @ localhost []	Query	SELECT user_host, command_type, argument FROM mysql.general_log
+WHERE argument LIKE '%sleep%'
+SELECT user_host, db, sql_text FROM mysql.slow_log
+WHERE sql_text LIKE '%sleep%';
+user_host	db	sql_text
+root[root] @ localhost []	😎	SELECT user(), sleep(0.2) AS `😎`
+😎[😎] @ localhost []	😎	SELECT user(), sleep(0.2) AS `😎`
+SET @@global.log_output=       @old_log_output;
+SET @@global.slow_query_log=   @old_slow_query_log;
+SET @@global.general_log=      @old_general_log;

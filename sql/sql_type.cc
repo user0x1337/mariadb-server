@@ -4127,7 +4127,8 @@ Field *Type_handler_varchar::make_schema_field(MEM_ROOT *root, TABLE *table,
 {
   DBUG_ASSERT(def.char_length());
   LEX_CSTRING name= def.name();
-  uint32 octet_length= (uint32) def.char_length() * 3;
+  uint32 octet_length= (uint32) def.char_length() *
+                       system_charset_info_for_i_s->mbmaxlen;
   if (octet_length > MAX_FIELD_VARCHARLENGTH)
   {
     Field *field= new (root)

@@ -373,7 +373,7 @@ inline bool unexpected_error_code(int unexpected_error)
 
   @description
   We assume that FN_REFLEN is big enough to hold
-  MAX_CONNECTION_NAME * MAX_FILENAME_MBWIDTH characters + 2 numbers +
+  CONNECTION_CHAR_LEN * FILENAME_CHARSET_MBMAXLEN characters + 2 numbers +
   a short extension.
 
   The resulting file name has the following parts, each separated with a '-'
@@ -450,7 +450,7 @@ static void cleanup_load_tmpdir(LEX_CSTRING *connection_name)
   FILEINFO *file;
   size_t i;
   char dir[FN_REFLEN], fname[FN_REFLEN];
-  char prefbuf[31 + MAX_CONNECTION_NAME* MAX_FILENAME_MBWIDTH + 1];
+  char prefbuf[31 + CONNECTION_CHAR_LEN * FILENAME_CHARSET_MBMAXLEN + 1];
   DBUG_ENTER("cleanup_load_tmpdir");
 
   unpack_dirname(dir, slave_load_tmpdir);

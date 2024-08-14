@@ -49,7 +49,10 @@ SET @@session.default_master_connection = '1234-5678';
 SELECT @@session.default_master_connection;
 SET @@session.default_master_connection = '@!*/"';
 SELECT @@session.default_master_connection;
-SET @@session.default_master_connection = REPEAT('a',191);
+SET @@session.default_master_connection = REPEAT('a',64);
+SELECT @@session.default_master_connection;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@session.default_master_connection = REPEAT('a',65);
 SELECT @@session.default_master_connection;
 SET @@session.default_master_connection = master2;
 SELECT @@session.default_master_connection;

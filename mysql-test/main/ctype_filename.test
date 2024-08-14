@@ -1,3 +1,5 @@
+--source include/have_utf32.inc
+
 --disable_warnings
 drop table if exists con, aux, nul, lpt1, com1, `clock$`;
 --enable_warnings
@@ -165,4 +167,28 @@ CREATE TABLE t1 (c CHAR BINARY) CHARACTER SET filename;
 
 --echo #
 --echo # End of 10.9 tests
+--echo #
+
+
+--echo #
+--echo # Start of 11.7 tests
+--echo #
+
+--echo #
+--echo # MDEV-27490 Allow full utf8mb4 for identifiers
+--echo #
+
+CREATE OR REPLACE TABLE t1 (a CHAR CHARACTER SET utf32);
+INSERT INTO t1 VALUES (0x10000), (0x1FFFF);
+INSERT INTO t1 VALUES (0x20000), (0x2FFFF);
+INSERT INTO t1 VALUES (0x30000), (0x3FFFF);
+INSERT INTO t1 VALUES (0xE0000), (0xEFFFF);
+INSERT INTO t1 VALUES (0xF0000), (0xFFFFF);
+INSERT INTO t1 VALUES (0x100000), (0x10FFFF);
+
+SELECT hex(a), BINARY CONVERT(a USING filename) FROM t1;
+DROP TABLE t1;
+
+--echo #
+--echo # End of 11.7 tests
 --echo #

@@ -790,18 +790,18 @@ connection default;
 drop table t1;
 
 --echo # check too long identifier names
-select get_lock(repeat('a', 192), 0);
-select is_used_lock(repeat('a', 192)) = connection_id();
-select is_free_lock(repeat('a', 192));
-select release_lock(repeat('a', 192));
+select get_lock(repeat('a', 64), 0);
+select is_used_lock(repeat('a', 64)) = connection_id();
+select is_free_lock(repeat('a', 64));
+select release_lock(repeat('a', 64));
 --error ER_TOO_LONG_IDENT
-select get_lock(repeat('a', 193), 0);
+select get_lock(repeat('a', 65), 0);
 --error ER_TOO_LONG_IDENT
-select is_used_lock(repeat('a', 193));
+select is_used_lock(repeat('a', 65));
 --error ER_TOO_LONG_IDENT
-select is_free_lock(repeat('a', 193));
+select is_free_lock(repeat('a', 65));
 --error ER_TOO_LONG_IDENT
-select release_lock(repeat('a', 193));
+select release_lock(repeat('a', 65));
 
 --enable_service_connection
 --enable_ps2_protocol

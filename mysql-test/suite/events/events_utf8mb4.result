@@ -1,0 +1,28 @@
+#
+# Start of 11.7 tests
+#
+#
+# MDEV-27490 Allow full utf8mb4 for identifiers
+#
+SET NAMES utf8mb4;
+CREATE USER 😎@localost;
+CREATE DEFINER=😎@localost
+EVENT 😎
+ON SCHEDULE EVERY 1 YEAR
+DISABLE
+COMMENT '😎'
+    DO CALL 😎();
+Warnings:
+Warning	1105	Event scheduler is switched off, use SET GLOBAL event_scheduler=ON to enable it.
+SELECT name, definer, body, body_utf8, comment FROM mysql.event;
+name	😎
+definer	😎@localost
+body	CALL 😎()
+body_utf8	CALL 😎()
+comment	😎
+DROP EVENT 😎;
+SELECT name, definer, body, body_utf8, comment FROM mysql.event;
+DROP USER 😎@localost;
+#
+# End of 11.7 tests
+#

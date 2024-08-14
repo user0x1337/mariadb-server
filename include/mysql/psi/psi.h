@@ -1196,7 +1196,7 @@ struct PSI_metadata_locker_state_v1
 typedef struct PSI_metadata_locker_state_v1 PSI_metadata_locker_state_v1;
 
 /* Duplicate of NAME_LEN, to avoid dependency on mysql_com.h */
-#define PSI_SCHEMA_NAME_LEN (64 * 3)
+#define PSI_SCHEMA_NAME_LEN (64 * 4)
 
 /**
   State data storage for @c get_thread_statement_locker_v1_t,

@@ -908,7 +908,7 @@ void free_key_master_info(Master_info *mi)
    Check if connection name for master_info is valid.
 
    It's valid if it's a valid system name of length less than
-   MAX_CONNECTION_NAME.
+   CONNECTION_CHAR_LEN characters.
 
    @return
    0 ok
@@ -917,9 +917,9 @@ void free_key_master_info(Master_info *mi)
 
 bool check_master_connection_name(LEX_CSTRING *name)
 {
-  if (name->length >= MAX_CONNECTION_NAME)
-    return 1;
-  return 0;
+  return name->length > CONNECTION_OCTET_LEN /*reject obviously bad values*/||
+         name->length > Well_formed_prefix(system_charset_info,
+                                           *name, CONNECTION_CHAR_LEN).length();
 }
  
 
@@ -947,8 +947,8 @@ void create_logfile_name_with_suffix(char *res_file_name, size_t length,
                                      const char *info_file, bool append,
                                      LEX_CSTRING *suffix)
 {
-  char buff[MAX_CONNECTION_NAME+1],
-    res[MAX_CONNECTION_NAME * MAX_FILENAME_MBWIDTH+1], *p;
+  char buff[CONNECTION_OCTET_LEN + 1],
+    res[CONNECTION_CHAR_LEN * FILENAME_CHARSET_MBMAXLEN + 1], *p;
 
   p= strmake(res_file_name, info_file, length);
   /* If not empty suffix and there is place left for some part of the suffix */
@@ -1098,7 +1098,7 @@ bool Master_info_index::init_all_master_info()
 {
   int thread_mask;
   int err_num= 0, succ_num= 0; // The number of success read Master_info
-  char sign[MAX_CONNECTION_NAME+1];
+  char sign[CONNECTION_OCTET_LEN + 1];
   File index_file_nr;
   THD *thd;
   DBUG_ENTER("init_all_master_info");
@@ -1379,7 +1379,7 @@ Master_info_index::get_master_info(const LEX_CSTRING *connection_name,
               connection_name->str));
 
   /* Make name lower case for comparison */
-  IdentBufferCasedn<MAX_CONNECTION_NAME> buff(*connection_name);
+  IdentBufferCasedn<CONNECTION_OCTET_LEN> buff(*connection_name);
   mi= (Master_info*) my_hash_search(&master_info_hash,
                                     (const uchar*) buff.ptr(), buff.length());
   if (!mi && warning != Sql_condition::WARN_LEVEL_NOTE)

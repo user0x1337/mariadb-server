@@ -1,0 +1,64 @@
+#
+# Start of 11.7 tests
+#
+#
+# MDEV-27490 Allow full utf8mb4 for identifiers
+#
+SET NAMES utf8mb4;
+CREATE USER 😎@localhost;
+CREATE DATABASE 😎;
+CREATE TABLE 😎.😎 (😎 INT);
+CREATE FUNCTION 😎.😎 (😎 INT) RETURNS TEXT RETURN '😎';
+GRANT BINLOG MONITOR ON *.* TO 😎@localhost;
+SELECT host, user FROM mysql.global_priv WHERE user='😎';
+host	user
+localhost	😎
+REVOKE BINLOG MONITOR ON *.* FROM 😎@localhost;
+SELECT host, user FROM mysql.global_priv WHERE user='😎';
+host	user
+localhost	😎
+GRANT SELECT (😎) ON 😎.😎 TO 😎@localhost;
+SELECT * FROM mysql.columns_priv;
+Host	Db	User	Table_name	Column_name	Timestamp	Column_priv
+localhost	😎	😎	😎	😎	0000-00-00 00:00:00	Select
+REVOKE SELECT (😎) ON 😎.😎 FROM 😎@localhost;
+SELECT * FROM mysql.columns_priv;
+Host	Db	User	Table_name	Column_name	Timestamp	Column_priv
+GRANT ALL PRIVILEGES ON 😎.😎 TO 😎@localhost;
+SELECT * FROM mysql.tables_priv;
+Host	Db	User	Table_name	Grantor	Timestamp	Table_priv	Column_priv
+localhost	mysql	mariadb.sys	global_priv	root@localhost	0000-00-00 00:00:00	Select,Delete	
+localhost	😎	😎	😎	root@localhost	0000-00-00 00:00:00	Select,Insert,Update,Delete,Create,Drop,References,Index,Alter,Create View,Show view,Trigger,Delete versioning rows	
+REVOKE ALL PRIVILEGES ON 😎.😎 FROM 😎@localhost;
+SELECT * FROM mysql.tables_priv;
+Host	Db	User	Table_name	Grantor	Timestamp	Table_priv	Column_priv
+localhost	mysql	mariadb.sys	global_priv	root@localhost	0000-00-00 00:00:00	Select,Delete	
+GRANT ALL PRIVILEGES ON 😎.* TO 😎@localhost;
+SELECT * FROM mysql.db;
+Host	Db	User	Select_priv	Insert_priv	Update_priv	Delete_priv	Create_priv	Drop_priv	Grant_priv	References_priv	Index_priv	Alter_priv	Create_tmp_table_priv	Lock_tables_priv	Create_view_priv	Show_view_priv	Create_routine_priv	Alter_routine_priv	Execute_priv	Event_priv	Trigger_priv	Delete_history_priv	Show_create_routine_priv
+localhost	😎	😎	Y	Y	Y	Y	Y	Y	N	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y
+REVOKE ALL PRIVILEGES ON 😎.* FROM 😎@localhost;
+SELECT * FROM mysql.db;
+Host	Db	User	Select_priv	Insert_priv	Update_priv	Delete_priv	Create_priv	Drop_priv	Grant_priv	References_priv	Index_priv	Alter_priv	Create_tmp_table_priv	Lock_tables_priv	Create_view_priv	Show_view_priv	Create_routine_priv	Alter_routine_priv	Execute_priv	Event_priv	Trigger_priv	Delete_history_priv	Show_create_routine_priv
+GRANT EXECUTE ON FUNCTION 😎.😎 TO 😎@localhost;
+SELECT * FROM mysql.procs_priv;
+Host	Db	User	Routine_name	Routine_type	Grantor	Proc_priv	Timestamp
+localhost	😎	😎	😎	FUNCTION	root@localhost	Execute	0000-00-00 00:00:00
+REVOKE EXECUTE ON FUNCTION 😎.😎 FROM 😎@localhost;
+SELECT * FROM mysql.procs_priv;
+Host	Db	User	Routine_name	Routine_type	Grantor	Proc_priv	Timestamp
+CREATE ROLE 😎 WITH ADMIN 😎@localhost;
+SELECT * FROM mysql.roles_mapping;
+Host	User	Role	Admin_option
+localhost	😎	😎	Y
+DROP ROLE 😎;
+SELECT * FROM mysql.roles_mapping;
+Host	User	Role	Admin_option
+DROP FUNCTION 😎.😎;
+DROP TABLE 😎.😎;
+DROP DATABASE 😎;
+DROP USER 😎@localhost;
+USE test;
+#
+# End of 11.7 tests
+#

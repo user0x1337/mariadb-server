@@ -1156,7 +1156,7 @@ my_wc_mb_item_name(CHARSET_INFO *cs, my_wc_t wc, uchar *str, uchar *end)
     str[3]= _dig_vec_upper[(uchar) wc & 0x0F];
     return 4;
   }
-  return my_charset_utf8mb3_handler.wc_mb(cs, wc, str, end);
+  return (system_charset_info->cset->wc_mb)(cs, wc, str, end);
 }
 
 

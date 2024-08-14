@@ -4215,7 +4215,10 @@ static int ull_name_ok(String *name)
   if (!name || !name->length())
     return 0;
 
-  if (name->length() > NAME_LEN)
+  if (name->length() > NAME_LEN ||
+      Well_formed_prefix(system_charset_info,
+                         name->ptr(), name->length(),
+                         NAME_CHAR_LEN).length() < name->length())
   {
     my_error(ER_TOO_LONG_IDENT, MYF(0), name->c_ptr_safe());
     return 0;

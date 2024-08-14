@@ -1673,10 +1673,10 @@ namespace Show {
 static ST_FIELD_INFO innodb_metrics_fields_info[]=
 {
 #define	METRIC_NAME		0
-  Column("NAME",            Varchar(NAME_LEN + 1),       NOT_NULL),
+  Column("NAME",            Varchar(NAME_CHAR_LEN + 1), NOT_NULL),
 
 #define	METRIC_SUBSYS		1
-  Column("SUBSYSTEM",       Varchar(NAME_LEN + 1),       NOT_NULL),
+  Column("SUBSYSTEM",       Varchar(NAME_CHAR_LEN + 1), NOT_NULL),
 
 #define	METRIC_VALUE_START	2
   Column("COUNT",           SLonglong(),                 NOT_NULL),
@@ -1721,7 +1721,7 @@ static ST_FIELD_INFO innodb_metrics_fields_info[]=
   Column("TYPE",    Enum(&metric_type_values_typelib), NOT_NULL),
 
 #define	METRIC_DESC		16
-  Column("COMMENT",         Varchar(NAME_LEN + 1),       NOT_NULL),
+  Column("COMMENT",         Varchar(192 + 1),  NOT_NULL),
   CEnd()
 };
 } // namespace Show
@@ -3082,10 +3082,10 @@ namespace Show {
 static ST_FIELD_INFO i_s_fts_config_fields_info[]=
 {
 #define	FTS_CONFIG_KEY			0
-  Column("KEY",   Varchar(NAME_LEN + 1),  NOT_NULL),
+  Column("KEY",   Varchar(NAME_CHAR_LEN + 1),  NOT_NULL),
 
 #define	FTS_CONFIG_VALUE		1
-  Column("VALUE", Varchar(NAME_LEN + 1),  NOT_NULL),
+  Column("VALUE", Varchar(NAME_CHAR_LEN + 1),  NOT_NULL),
 
   CEnd()
 };
@@ -5755,13 +5755,13 @@ namespace Show {
 static ST_FIELD_INFO innodb_sys_foreign_fields_info[]=
 {
 #define SYS_FOREIGN_ID		0
-  Column("ID", Varchar(NAME_LEN + 1), NOT_NULL),
+  Column("ID", Varchar(NAME_CHAR_LEN + 1), NOT_NULL),
 
 #define SYS_FOREIGN_FOR_NAME	1
-  Column("FOR_NAME", Varchar(NAME_LEN + 1), NOT_NULL),
+  Column("FOR_NAME", Varchar(NAME_CHAR_LEN + 1), NOT_NULL),
 
 #define SYS_FOREIGN_REF_NAME	2
-  Column("REF_NAME", Varchar(NAME_LEN + 1), NOT_NULL),
+  Column("REF_NAME", Varchar(NAME_CHAR_LEN + 1), NOT_NULL),
 
 #define SYS_FOREIGN_NUM_COL	3
   Column("N_COLS", ULong(), NOT_NULL),
@@ -5947,7 +5947,7 @@ namespace Show {
 static ST_FIELD_INFO innodb_sys_foreign_cols_fields_info[]=
 {
 #define SYS_FOREIGN_COL_ID		0
-  Column("ID", Varchar(NAME_LEN + 1), NOT_NULL),
+  Column("ID", Varchar(NAME_CHAR_LEN + 1), NOT_NULL),
 
 #define SYS_FOREIGN_COL_FOR_NAME	1
   Column("FOR_COL_NAME", Varchar(NAME_CHAR_LEN), NOT_NULL),

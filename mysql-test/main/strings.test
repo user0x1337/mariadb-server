@@ -8,13 +8,41 @@
 --echo #
 --echo # MDEV-25612 Assertion `to <= end' failed in process_args
 --echo #
-SET SESSION default_master_connection=REPEAT('a',190),lc_messages=ru_ru;
+SET SESSION default_master_connection=REPEAT('a',64),lc_messages=ru_ru;
 CHANGE MASTER TO master_host='dummy';
 START SLAVE sql_thread;
 --error ER_SLAVE_MUST_STOP
 CHANGE MASTER TO master_user='user',master_password='pwd';
 STOP SLAVE;
 RESET SLAVE ALL;
+
+# 2-byte characters
+SET SESSION default_master_connection=REPEAT(_utf8mb4 0xC3A4, 64),lc_messages=ru_ru;
+CHANGE MASTER TO master_host='dummy';
+START SLAVE sql_thread;
+--error ER_SLAVE_MUST_STOP
+CHANGE MASTER TO master_user='user',master_password='pwd';
+STOP SLAVE;
+RESET SLAVE ALL;
+
+# 3-byte characters
+SET SESSION default_master_connection=REPEAT(_utf8mb4 0xE1B98F, 64),lc_messages=ru_ru;
+CHANGE MASTER TO master_host='dummy';
+START SLAVE sql_thread;
+--error ER_SLAVE_MUST_STOP
+CHANGE MASTER TO master_user='user',master_password='pwd';
+STOP SLAVE;
+RESET SLAVE ALL;
+
+# TODO: this crashes
+## 4-byte characters
+#SET SESSION default_master_connection=REPEAT(_utf8mb4 0xF09DBC87, 64),lc_messages=ru_ru;
+#CHANGE MASTER TO master_host='dummy';
+#START SLAVE sql_thread;
+#--error ER_SLAVE_MUST_STOP
+#CHANGE MASTER TO master_user='user',master_password='pwd';
+#STOP SLAVE;
+#RESET SLAVE ALL;
 
 --echo #
 --echo # MDEV-25754 ASAN: stack-buffer-overflow in Field_newdate::val_str

@@ -50,10 +50,11 @@
 #define MAX_REFLENGTH 4				/* Max length for record ref */
 #endif
 #define MAX_HOSTNAME  (HOSTNAME_LENGTH + 1)	/* len+1 in mysql.user */
-#define MAX_CONNECTION_NAME NAME_LEN
+
+#define CONNECTION_CHAR_LEN 64
+#define CONNECTION_OCTET_LEN 64*SYSTEM_CHARSET_MBMAXLEN
 
 #define MAX_MBWIDTH		3		/* Max multibyte sequence */
-#define MAX_FILENAME_MBWIDTH    5
 #define MAX_FIELD_CHARLENGTH	255
 /*
   In MAX_FIELD_VARCHARLENGTH we reserve extra bytes for the overhead:

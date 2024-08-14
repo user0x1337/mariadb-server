@@ -1,0 +1,56 @@
+-- source include/not_embedded.inc
+
+--echo #
+--echo # Start of 11.7 tests
+--echo #
+
+--echo #
+--echo # MDEV-27490 Allow full utf8mb4 for identifiers
+--echo #
+
+SET NAMES utf8mb4;
+
+CREATE USER 😎@localhost;
+CREATE DATABASE 😎;
+CREATE TABLE 😎.😎 (😎 INT);
+CREATE FUNCTION 😎.😎 (😎 INT) RETURNS TEXT RETURN '😎';
+
+GRANT BINLOG MONITOR ON *.* TO 😎@localhost;
+SELECT host, user FROM mysql.global_priv WHERE user='😎';
+REVOKE BINLOG MONITOR ON *.* FROM 😎@localhost;
+SELECT host, user FROM mysql.global_priv WHERE user='😎';
+
+GRANT SELECT (😎) ON 😎.😎 TO 😎@localhost;
+SELECT * FROM mysql.columns_priv;
+REVOKE SELECT (😎) ON 😎.😎 FROM 😎@localhost;
+SELECT * FROM mysql.columns_priv;
+
+GRANT ALL PRIVILEGES ON 😎.😎 TO 😎@localhost;
+SELECT * FROM mysql.tables_priv;
+REVOKE ALL PRIVILEGES ON 😎.😎 FROM 😎@localhost;
+SELECT * FROM mysql.tables_priv;
+
+GRANT ALL PRIVILEGES ON 😎.* TO 😎@localhost;
+SELECT * FROM mysql.db;
+REVOKE ALL PRIVILEGES ON 😎.* FROM 😎@localhost;
+SELECT * FROM mysql.db;
+
+GRANT EXECUTE ON FUNCTION 😎.😎 TO 😎@localhost;
+SELECT * FROM mysql.procs_priv;
+REVOKE EXECUTE ON FUNCTION 😎.😎 FROM 😎@localhost;
+SELECT * FROM mysql.procs_priv;
+
+CREATE ROLE 😎 WITH ADMIN 😎@localhost;
+SELECT * FROM mysql.roles_mapping;
+DROP ROLE 😎;
+SELECT * FROM mysql.roles_mapping;
+
+DROP FUNCTION 😎.😎;
+DROP TABLE 😎.😎;
+DROP DATABASE 😎;
+DROP USER 😎@localhost;
+USE test;
+
+--echo #
+--echo # End of 11.7 tests
+--echo #

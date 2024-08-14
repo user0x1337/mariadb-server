@@ -10,7 +10,8 @@
 # Mix all columns in the given table tbl to each other and calculate expr.
 
 DELIMITER $$;
-CREATE PROCEDURE p1(tbl TEXT, expr TEXT)
+CREATE PROCEDURE p1(tbl TYPE OF INFORMATION_SCHEMA.COLUMNS.TABLE_NAME,
+                    expr TEXT)
 BEGIN
   DECLARE t1cols INT DEFAULT (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
                               WHERE TABLE_NAME=tbl AND TABLE_SCHEMA='test');

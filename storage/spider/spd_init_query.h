@@ -32,6 +32,9 @@ static LEX_STRING spider_init_queries[] = {
     "SET tx_read_only = off;"
   )},
   {C_STRING_WITH_LEN(
+    "SET NAMES utf8mb4 COLLATE utf8mb4_general_ci;"
+  )},
+  {C_STRING_WITH_LEN(
     "create table if not exists mysql.spider_xa("
     "  format_id int not null default 0,"
     "  gtrid_length int not null default 0,"

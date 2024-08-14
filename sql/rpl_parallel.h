@@ -181,7 +181,7 @@ struct rpl_parallel_thread {
   inuse_relaylog *accumulated_ir_last;
   uint64 accumulated_ir_count;
 
-  char channel_name[MAX_CONNECTION_NAME];
+  char channel_name[CONNECTION_OCTET_LEN];
   uint channel_name_length;
   rpl_gtid last_seen_gtid;
   int last_error_number;

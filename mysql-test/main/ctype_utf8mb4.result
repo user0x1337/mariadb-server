@@ -1726,7 +1726,7 @@ character_set_database	utf8mb4
 character_set_filesystem	binary
 character_set_results	utf8mb4
 character_set_server	utf8mb4
-character_set_system	utf8mb3
+character_set_system	utf8mb4
 SET @@character_set_server=@save_character_set_server;
 CREATE DATABASE crashtest DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 USE crashtest;
@@ -2907,8 +2907,8 @@ SET optimizer_switch=@save_optimizer_switch;
 # MDEV-6572 "USE dbname" with a bad sequence erroneously connects to a wrong database
 #
 SET NAMES utf8mb4;
-SELECT * FROM `test😁😁test`;
-ERROR HY000: Invalid utf8mb4 character string: 'test\xF0\x9F\x98\x81\xF0\x9F\x98\x81test'
+EXECUTE IMMEDIATE CONCAT('SELECT * FROM `', 0xFF, '`');
+ERROR HY000: Invalid utf8mb4 character string: '\xFF'
 #
 # MDEV-7231 Field ROUTINE_DEFINITION in INFORMATION_SCHEMA.`ROUTINES` contains broken procedure body when used shielding quotes inside.
 #

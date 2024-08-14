@@ -5313,7 +5313,8 @@ bool Lex_ident_fs::check_body(const char *name, size_t length,
 
   for ( ; name != end ; char_length++)
   {
-    int len= my_ismbchar(&my_charset_utf8mb3_general_ci, name, end);
+    // TODO: it considers broken bytes as single byte characters
+    int len= my_ismbchar(&my_charset_utf8mb4_general_ci, name, end);
     if (len)
     {
       name+= len;

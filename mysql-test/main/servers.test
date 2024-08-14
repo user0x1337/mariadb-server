@@ -1,5 +1,6 @@
 # Generic tests for servers (do not require FEDERATED)
 set sql_mode="";
+SET NAMES utf8mb4;
 
 --echo #
 --echo # MDEV-4594 - CREATE SERVER crashes embedded
@@ -22,3 +23,30 @@ DROP SERVER s1;
 CREATE SERVER s1 FOREIGN DATA WRAPPER mysql OPTIONS(SOCKET 'bar');
 SELECT * FROM mysql.servers;
 DROP SERVER s1;
+
+
+--echo #
+--echo # Start of 11.7 tests
+--echo #
+
+--echo #
+--echo # MDEV-27490 Allow full utf8mb4 for identifiers
+--echo #
+
+CREATE SERVER 😎 FOREIGN DATA WRAPPER 😎
+OPTIONS(
+  HOST '😎',
+  DATABASE '😎',
+  USER '😎',
+  PASSWORD '😎',
+  SOCKET '/tmp/😎.sock',
+  OWNER '😎'
+);
+--vertical_results
+SELECT * FROM mysql.servers;
+--horizontal_results
+DROP SERVER 😎;
+
+--echo #
+--echo # End of 11.7 tests
+--echo #

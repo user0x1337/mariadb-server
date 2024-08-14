@@ -3893,7 +3893,7 @@ CREATE TEMPORARY TABLE `TABLES` (
   `TABLE_COMMENT` varchar(2048) NOT NULL,
   `MAX_INDEX_LENGTH` bigint(21) unsigned,
   `TEMPORARY` varchar(1)
-) ENGINE=MEMORY DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
+) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 #
 # Bug#19745 mysqldump --xml produces invalid xml
@@ -5492,7 +5492,7 @@ general_log	CREATE TABLE `general_log` (
   `server_id` int(10) unsigned NOT NULL,
   `command_type` varchar(64) NOT NULL,
   `argument` mediumtext NOT NULL
-) ENGINE=CSV DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='General log'
+) ENGINE=CSV DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='General log'
 SHOW CREATE TABLE mysql.slow_log;
 Table	Create Table
 slow_log	CREATE TABLE `slow_log` (
@@ -5509,7 +5509,7 @@ slow_log	CREATE TABLE `slow_log` (
   `sql_text` mediumtext NOT NULL,
   `thread_id` bigint(21) unsigned NOT NULL,
   `rows_affected` bigint(20) unsigned NOT NULL
-) ENGINE=CSV DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='Slow log'
+) ENGINE=CSV DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Slow log'
 SET @@global.log_output=       @old_log_output_state;
 SET @@global.slow_query_log=   @old_slow_query_log_state;
 SET @@global.general_log=      @old_general_log_state;
@@ -5988,7 +5988,7 @@ CREATE TABLE IF NOT EXISTS `general_log` (
   `server_id` int(10) unsigned NOT NULL,
   `command_type` varchar(64) NOT NULL,
   `argument` mediumtext NOT NULL
-) ENGINE=CSV DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='General log';
+) ENGINE=CSV DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='General log';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -6006,7 +6006,7 @@ CREATE TABLE IF NOT EXISTS `slow_log` (
   `sql_text` mediumtext NOT NULL,
   `thread_id` bigint(21) unsigned NOT NULL,
   `rows_affected` bigint(20) unsigned NOT NULL
-) ENGINE=CSV DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='Slow log';
+) ENGINE=CSV DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Slow log';
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `innodb_index_stats`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -6084,7 +6084,7 @@ CREATE TABLE IF NOT EXISTS `general_log` (
   `server_id` int(10) unsigned NOT NULL,
   `command_type` varchar(64) NOT NULL,
   `argument` mediumtext NOT NULL
-) ENGINE=CSV DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='General log';
+) ENGINE=CSV DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='General log';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -6102,7 +6102,7 @@ CREATE TABLE IF NOT EXISTS `slow_log` (
   `sql_text` mediumtext NOT NULL,
   `thread_id` bigint(21) unsigned NOT NULL,
   `rows_affected` bigint(20) unsigned NOT NULL
-) ENGINE=CSV DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='Slow log';
+) ENGINE=CSV DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Slow log';
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `innodb_index_stats`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -6190,7 +6190,7 @@ CREATE TABLE IF NOT EXISTS `general_log` (
   `server_id` int(10) unsigned NOT NULL,
   `command_type` varchar(64) NOT NULL,
   `argument` mediumtext NOT NULL
-) ENGINE=CSV DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='General log';
+) ENGINE=CSV DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='General log';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -6208,7 +6208,7 @@ CREATE TABLE IF NOT EXISTS `slow_log` (
   `sql_text` mediumtext NOT NULL,
   `thread_id` bigint(21) unsigned NOT NULL,
   `rows_affected` bigint(20) unsigned NOT NULL
-) ENGINE=CSV DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci COMMENT='Slow log';
+) ENGINE=CSV DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Slow log';
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `innodb_index_stats`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -6636,7 +6636,7 @@ DROP TABLE IF EXISTS mysql.column_stats;
 		<field Field="server_id" Type="int(10) unsigned" Null="NO" Key="" Extra="" Comment="" />
 		<field Field="command_type" Type="varchar(64)" Null="NO" Key="" Extra="" Comment="" />
 		<field Field="argument" Type="mediumtext" Null="NO" Key="" Extra="" Comment="" />
-		<options Name="general_log" Engine="CSV" Version="10" Row_format="Dynamic" Rows="2" Avg_row_length="0" Data_length="0" Max_data_length="0" Index_length="0" Data_free="0" Collation="utf8mb3_general_ci" Create_options="" Comment="General log" Max_index_length="0" Temporary="N" />
+		<options Name="general_log" Engine="CSV" Version="10" Row_format="Dynamic" Rows="2" Avg_row_length="0" Data_length="0" Max_data_length="0" Index_length="0" Data_free="0" Collation="utf8mb4_general_ci" Create_options="" Comment="General log" Max_index_length="0" Temporary="N" />
 	</table_structure>
 	<table_structure name="slow_log">
 		<field Field="start_time" Type="timestamp(6)" Null="NO" Key="" Default="current_timestamp(6)" Extra="on update current_timestamp(6)" Comment="" />
@@ -6652,7 +6652,7 @@ DROP TABLE IF EXISTS mysql.column_stats;
 		<field Field="sql_text" Type="mediumtext" Null="NO" Key="" Extra="" Comment="" />
 		<field Field="thread_id" Type="bigint(21) unsigned" Null="NO" Key="" Extra="" Comment="" />
 		<field Field="rows_affected" Type="bigint(20) unsigned" Null="NO" Key="" Extra="" Comment="" />
-		<options Name="slow_log" Engine="CSV" Version="10" Row_format="Dynamic" Rows="2" Avg_row_length="0" Data_length="0" Max_data_length="0" Index_length="0" Data_free="0" Collation="utf8mb3_general_ci" Create_options="" Comment="Slow log" Max_index_length="0" Temporary="N" />
+		<options Name="slow_log" Engine="CSV" Version="10" Row_format="Dynamic" Rows="2" Avg_row_length="0" Data_length="0" Max_data_length="0" Index_length="0" Data_free="0" Collation="utf8mb4_general_ci" Create_options="" Comment="Slow log" Max_index_length="0" Temporary="N" />
 	</table_structure>
 
 /*!50106 SET GLOBAL LOG_OUTPUT=@save_log_output*/;

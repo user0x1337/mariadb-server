@@ -346,7 +346,7 @@ struct PSI_statement_locker_state_v1
   ulong m_sort_rows;
   ulong m_sort_scan;
   const struct sql_digest_storage *m_digest;
-  char m_schema_name[(64 * 3)];
+  char m_schema_name[(64 * 4)];
   uint m_schema_name_length;
   uint m_cs_number;
   PSI_sp_share *m_parent_sp_share;

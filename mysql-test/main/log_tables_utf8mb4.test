@@ -1,0 +1,59 @@
+# This test needs a multithreaded mysqltest
+--source include/not_embedded.inc
+--source include/have_csv.inc
+--disable_ps_protocol
+
+SET @old_log_output=       @@global.log_output;
+SET @old_slow_query_log=   @@global.slow_query_log;
+SET @old_general_log=      @@global.general_log;
+SET @old_long_query_time=  @@session.long_query_time;
+
+
+--echo #
+--echo # MDEV-27490 Allow full utf8mb4 for identifiers
+--echo #
+
+--character_set utf8mb4
+SET NAMES utf8mb4;
+TRUNCATE TABLE mysql.general_log;
+TRUNCATE TABLE mysql.slow_log;
+SET @@global.log_output= 'TABLE';
+SET @@global.general_log='ON';
+SET @@global.slow_query_log='ON';
+
+# Run some queries with root
+CREATE DATABASE 😎;
+USE 😎;
+SET long_query_time=0.1;
+SELECT user(), sleep(0.2) AS `😎`;
+USE test;
+
+# Run some queries with a new user
+CREATE USER 😎@localhost;
+GRANT ALL PRIVILEGES ON 😎.* TO 😎@localhost;
+--connect (con1,localhost,😎,,😎)
+SELECT @@character_set_client;
+SET long_query_time=0.1;
+SELECT user(), sleep(0.2) AS `😎`;
+--disconnect con1
+--connection default
+DROP USER 😎@localhost;
+
+DROP DATABASE 😎;
+
+# Examine logs
+FLUSH LOGS;
+
+SELECT user_host, command_type, argument FROM mysql.general_log
+WHERE argument LIKE '%sleep%';
+
+SELECT user_host, db, sql_text FROM mysql.slow_log
+WHERE sql_text LIKE '%sleep%';
+
+#
+# Cleanup
+#
+
+SET @@global.log_output=       @old_log_output;
+SET @@global.slow_query_log=   @old_slow_query_log;
+SET @@global.general_log=      @old_general_log;

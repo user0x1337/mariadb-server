@@ -679,7 +679,13 @@ bool Current_schema_tracker::store(THD *thd, String *buf)
   length += net_length_size(length);
 
   compile_time_assert(SESSION_TRACK_SCHEMA < 251);
-  compile_time_assert(NAME_LEN < 251);
+  // TODO
+  //compile_time_assert(NAME_LEN < 251);
+  if (length >= 251)
+  {
+    my_error(ER_WRONG_DB_NAME ,MYF(0), thd->db.str);
+    return true;
+  }
   DBUG_ASSERT(length < 251);
   if (unlikely((1 + 1 + length + buf->length() >= MAX_PACKET_LENGTH) ||
                buf->reserve(1 + 1 + length, EXTRA_ALLOC)))
