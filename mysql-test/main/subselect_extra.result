@@ -482,3 +482,145 @@ a	b
 DROP VIEW v2;
 DROP TABLE t1,t2;
 set optimizer_switch= @tmp_subselect_extra_derived;
+#
+# MDEV-32294 2nd execution problem with inconsistent outer context paths
+#
+SELECT * FROM (
+WITH RECURSIVE x ( a ) AS ( SELECT 1 UNION SELECT a FROM x )
+SELECT * FROM x
+WHERE a IN (
+SELECT a FROM x WHERE ( SELECT 1 GROUP BY a HAVING ( a ) )
+)
+) as dt ;
+a
+1
+create table t1 (a int) engine=myisam;
+insert into t1 values (1), (2);
+create table t2 (b int) engine=myisam;
+insert into t2 values (3), (1);
+create table t3 (c int) select a as c from t1;
+select * from
+(
+with recursive x as ( select a from t1 union select a+1 from x where a < 4 )
+select * from x
+where a in
+(
+select a from x
+where ( select b from t2 where b < 3 group by a having a > 0 ) <> 0
+)
+) dt;
+a
+1
+2
+3
+4
+prepare s from "select * from
+(
+with recursive x as ( select a from t1 union select a+1 from x where a < 4 )
+select * from x
+where a in
+(
+select a from x
+where ( select b from t2 where b < 3 group by a having a > 0 ) <> 0
+)
+) dt";
+execute s;
+a
+1
+2
+3
+4
+execute s;
+a
+1
+2
+3
+4
+select * from
+(
+select * from t1
+where a in
+(
+select a from t1
+where ( select b from t2 where b < 3 group by a having a > 0 ) <> 0
+)
+) dt;
+a
+1
+2
+prepare s from "select * from
+(
+select * from t1
+where a in
+(
+select a from t1
+where ( select b from t2 where b < 3 group by a having a > 0 ) <> 0
+)
+) dt";
+execute s;
+a
+1
+2
+execute s;
+a
+1
+2
+select * from
+(
+select * from t3
+where c in
+(
+select a from t1
+where ( select b from t2 where a > 0 and b < 3 ) <> 0
+)
+) dt;
+c
+1
+2
+prepare s from "select * from
+(
+select * from t3
+where c in
+(
+select a from t1
+where ( select b from t2 where a > 0 and b < 3 ) <> 0
+)
+) dt";
+execute s;
+c
+1
+2
+execute s;
+c
+1
+2
+select * from
+(
+select * from t3
+where c in
+(
+select a from t1
+where ( select b from t2 where a > 0 and b < 3 ) <> 0
+)
+) dt
+where dt.c  > 1;
+c
+2
+prepare s from "select * from
+(
+select * from t3
+where c in
+(
+select a from t1
+where ( select b from t2 where a > 0 and b < 3 ) <> 0
+)
+) dt
+where dt.c  > 1";
+execute s;
+c
+2
+execute s;
+c
+2
+drop table t1, t2, t3;
+# end of 10.5 tests

@@ -3024,7 +3024,7 @@ void st_select_lex::init_query()
   having_fix_field= 0;
   having_fix_field_for_pushed_cond= 0;
   leaf_tables_saved= false;
-  context.select_lex= this;
+  context.set_select_lex(this);
   context.init();
   cond_count= between_count= with_wild= 0;
   max_equal_elems= 0;
@@ -3053,6 +3053,7 @@ void st_select_lex::init_query()
   have_merged_subqueries= FALSE;
   bzero((char*) expr_cache_may_be_used, sizeof(expr_cache_may_be_used));
   select_list_tables= 0;
+  merged_into= 0;
   m_non_agg_field_used= false;
   m_agg_func_used= false;
   m_custom_agg_func_used= false;
@@ -3426,7 +3427,7 @@ bool st_select_lex::mark_as_dependent(THD *thd, st_select_lex *last,
   Name_resolution_context *c= &this->context;
   do
   {
-    SELECT_LEX *s= c->select_lex;
+    SELECT_LEX *s= c->get_select_lex();
     if (!(s->uncacheable & UNCACHEABLE_DEPENDENT_GENERATED))
     {
       // Select is dependent of outer select
@@ -3448,7 +3449,8 @@ bool st_select_lex::mark_as_dependent(THD *thd, st_select_lex *last,
     if (subquery_expr && subquery_expr->mark_as_dependent(thd, last, 
                                                           dependency))
       return TRUE;
-  } while ((c= c->outer_context) != NULL && (c->select_lex != last));
+  } while ((c= c->get_outer_context()) != NULL &&
+           (c->get_select_lex() != last));
   is_correlated= TRUE;
   master_unit()->item->is_correlated= TRUE;
   return FALSE;
@@ -6326,9 +6328,9 @@ bool LEX::push_context(Name_resolution_context *context)
 {
   DBUG_ENTER("LEX::push_context");
   DBUG_PRINT("info", ("Context: %p Select: %p (%d)",
-                       context, context->select_lex,
-                       (context->select_lex ?
-                        context->select_lex->select_number:
+                       context, context->get_select_lex(),
+                       (context->get_select_lex() ?
+                        context->get_select_lex()->select_number:
                         0)));
   bool res= context_stack.push_front(context, thd->mem_root);
   DBUG_RETURN(res);
@@ -6340,9 +6342,9 @@ Name_resolution_context *LEX::pop_context()
   DBUG_ENTER("LEX::pop_context");
   Name_resolution_context *context= context_stack.pop();
   DBUG_PRINT("info", ("Context: %p Select: %p (%d)",
-                       context, context->select_lex,
-                       (context->select_lex ?
-                        context->select_lex->select_number:
+                       context, context->get_select_lex(),
+                       (context->get_select_lex() ?
+                        context->get_select_lex()->select_number:
                         0)));
   DBUG_RETURN(context);
 }
@@ -9983,7 +9985,7 @@ void st_select_lex::register_unit(SELECT_LEX_UNIT *unit,
 
   for(SELECT_LEX *sel= unit->first_select();sel; sel= sel->next_select())
   {
-    sel->context.outer_context= outer_context;
+    sel->context.set_outer_context(outer_context);
   }
 }
 
