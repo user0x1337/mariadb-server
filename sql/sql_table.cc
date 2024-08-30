@@ -2182,8 +2182,8 @@ static int sort_keys(KEY *a, KEY *b)
   }
 
   /* must be very last */
-  return_if_nonzero((a->algorithm == HA_KEY_ALG_MHNSW) -
-                    (b->algorithm == HA_KEY_ALG_MHNSW));
+  return_if_nonzero((a->algorithm == HA_KEY_ALG_VECTOR) -
+                    (b->algorithm == HA_KEY_ALG_VECTOR));
 
   return_if_nonzero((a->algorithm == HA_KEY_ALG_FULLTEXT) -
                     (b->algorithm == HA_KEY_ALG_FULLTEXT));
@@ -3244,7 +3244,7 @@ mysql_prepare_create_table_finalize(THD *thd, HA_CREATE_INFO *create_info,
       continue;
     case Key::VECTOR:
         if (key->key_create_info.algorithm == HA_KEY_ALG_UNDEF)
-          key->key_create_info.algorithm= HA_KEY_ALG_MHNSW;
+          key->key_create_info.algorithm= HA_KEY_ALG_VECTOR;
         break;
     case Key::IGNORE_KEY:
       DBUG_ASSERT(0);
@@ -3721,7 +3721,7 @@ without_overlaps_err:
   create_info->null_bits= null_fields;
 
   if (*key_count >= 2 &&
-      (*key_info_buffer)[*key_count-2].algorithm == HA_KEY_ALG_MHNSW)
+      (*key_info_buffer)[*key_count-2].algorithm == HA_KEY_ALG_VECTOR)
   {
     my_error(ER_NOT_SUPPORTED_YET, MYF(0), "multiple VECTOR indexes");
     DBUG_RETURN(TRUE);
@@ -8960,7 +8960,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
       }
       else if (key_info->algorithm == HA_KEY_ALG_FULLTEXT)
         key_type= Key::FULLTEXT;
-      else if (key_info->algorithm == HA_KEY_ALG_MHNSW)
+      else if (key_info->algorithm == HA_KEY_ALG_VECTOR)
         key_type= Key::VECTOR;
       else
         key_type= Key::MULTIPLE;
