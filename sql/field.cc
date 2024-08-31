@@ -8882,6 +8882,16 @@ int Field_blob::key_cmp(const uchar *a,const uchar *b) const
 }
 
 
+Field *Field_blob::make_new_field(MEM_ROOT *root, TABLE *new_table,
+                                  bool keep_type)
+{
+  if (new_table->group_concat)
+    return new (root) Field_blob(field_length, maybe_null(), &field_name,
+                                 charset());
+  return Field::make_new_field(root, new_table, keep_type);
+}
+
+
 Field *Field_blob::new_key_field(MEM_ROOT *root, TABLE *new_table,
                                  uchar *new_ptr, uint32 length,
                                  uchar *new_null_ptr, uint new_null_bit)
