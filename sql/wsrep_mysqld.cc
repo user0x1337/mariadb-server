@@ -3130,6 +3130,10 @@ void wsrep_handle_mdl_conflict(MDL_context *requestor_ctx,
     THD::LOCK_thd_data to protect victim from concurrent usage
     and THD::LOCK_thd_kill to protect from disconnect or delete.
 
+    Note that all calls to wsrep_abort_thd() and ha_abort_transaction()
+    unlock LOCK_thd_kill for granted_thd, so granted_thd must not be
+    accessed after any of those calls. Moreover all other if branches
+    must release those locks.
     */
     mysql_mutex_lock(&granted_thd->LOCK_thd_kill);
     mysql_mutex_lock(&granted_thd->LOCK_thd_data);
@@ -3138,6 +3142,8 @@ void wsrep_handle_mdl_conflict(MDL_context *requestor_ctx,
     {
       DBUG_ASSERT(granted_thd->wsrep_aborter == request_thd->thread_id);
       WSREP_DEBUG("BF thread waiting for a victim to release locks");
+      mysql_mutex_unlock(&granted_thd->LOCK_thd_data);
+      mysql_mutex_unlock(&granted_thd->LOCK_thd_kill);
     }
     else if (wsrep_thd_is_toi(granted_thd) ||
              wsrep_thd_is_applying(granted_thd))
@@ -3146,6 +3152,8 @@ void wsrep_handle_mdl_conflict(MDL_context *requestor_ctx,
       {
         WSREP_DEBUG("BF thread waiting for SR in aborting state");
         ticket->wsrep_report(wsrep_debug);
+        mysql_mutex_unlock(&granted_thd->LOCK_thd_data);
+        mysql_mutex_unlock(&granted_thd->LOCK_thd_kill);
       }
       else if (wsrep_thd_is_SR(granted_thd) && !wsrep_thd_is_SR(request_thd))
       {
@@ -3174,6 +3182,11 @@ void wsrep_handle_mdl_conflict(MDL_context *requestor_ctx,
 	  wsrep_check_mode(WSREP_MODE_BF_MARIABACKUP))
       {
 	wsrep_abort_thd(request_thd, granted_thd, 1);
+      }
+      else
+      {
+        mysql_mutex_unlock(&granted_thd->LOCK_thd_data);
+        mysql_mutex_unlock(&granted_thd->LOCK_thd_kill);
       }
     }
     else if (request_thd->lex->sql_command == SQLCOM_DROP_TABLE)
@@ -3214,14 +3227,13 @@ void wsrep_handle_mdl_conflict(MDL_context *requestor_ctx,
         }
       }
     }
-    mysql_mutex_unlock(&granted_thd->LOCK_thd_data);
-    mysql_mutex_unlock(&granted_thd->LOCK_thd_kill);
-    DEBUG_SYNC(request_thd, "after_wsrep_thd_abort");
   }
   else
   {
     mysql_mutex_unlock(&request_thd->LOCK_thd_data);
   }
+
+  DEBUG_SYNC(request_thd, "after_wsrep_thd_abort");
 }
 
 /**/
@@ -3237,8 +3249,13 @@ static bool abort_replicated(THD *thd)
     wsrep_abort_thd(thd, thd, TRUE);
     ret_code= true;
   }
-  mysql_mutex_unlock(&thd->LOCK_thd_data);
-  mysql_mutex_unlock(&thd->LOCK_thd_kill);
+  else
+  {
+    /* wsrep_abort_thd() above releases LOCK_thd_data and LOCK_thd_kill, so
+       must do it here too. */
+    mysql_mutex_unlock(&thd->LOCK_thd_data);
+    mysql_mutex_unlock(&thd->LOCK_thd_kill);
+  }
   return ret_code;
 }
 

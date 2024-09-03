@@ -383,6 +383,8 @@ void wsrep_abort_thd(THD *bf_thd,
   }
   else
   {
+    mysql_mutex_unlock(&victim_thd->LOCK_thd_data);
+    mysql_mutex_unlock(&victim_thd->LOCK_thd_kill);
     WSREP_DEBUG("wsrep_abort_thd not effective: bf %llu victim %llu "
                 "wsrep %d wsrep_on %d RSU %d TOI %d aborting %d",
                 (long long)bf_thd->real_id, (long long)victim_thd->real_id,
@@ -391,6 +393,9 @@ void wsrep_abort_thd(THD *bf_thd,
                 wsrep_thd_is_toi(bf_thd),
                 wsrep_thd_is_aborting(victim_thd));
   }
+
+  mysql_mutex_assert_not_owner(&victim_thd->LOCK_thd_kill);
+  mysql_mutex_assert_not_owner(&victim_thd->LOCK_thd_data);
 
   DBUG_VOID_RETURN;
 }
