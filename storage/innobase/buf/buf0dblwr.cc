@@ -33,6 +33,7 @@ Created 2011/12/19
 #include "trx0sys.h"
 #include "fil0crypt.h"
 #include "fil0pagecompress.h"
+#include "log.h"
 
 using st_::span;
 
@@ -365,24 +366,16 @@ void buf_dblwr_t::recover()
   for (recv_dblwr_t::list::iterator i= recv_sys.dblwr.pages.begin();
        i != recv_sys.dblwr.pages.end(); ++i, ++page_no_dblwr)
   {
-    byte *page= *i;
-    const uint32_t page_no= page_get_page_no(page);
+    const uint32_t page_no= page_get_page_no(*i);
     if (!page_no) /* recovered via recv_dblwr_t::restore_first_page() */
       continue;
 
-    const lsn_t lsn= mach_read_from_8(page + FIL_PAGE_LSN);
-    if (recv_sys.parse_start_lsn > lsn)
-      /* Pages written before the checkpoint are not useful for recovery. */
+    const lsn_t lsn= mach_read_from_8(*i + FIL_PAGE_LSN);
+    if (recv_sys.parse_start_lsn > lsn || lsn > recv_sys.scanned_lsn)
+      /* Pages written before or after the recovery range are not usable. */
       continue;
-    const ulint space_id= page_get_space_id(page);
+    const uint32_t space_id= page_get_space_id(*i);
     const page_id_t page_id(space_id, page_no);
-
-    if (recv_sys.scanned_lsn < lsn)
-    {
-      ib::info() << "Ignoring a doublewrite copy of page " << page_id
-                 << " with future log sequence number " << lsn;
-      continue;
-    }
 
     fil_space_t *space= fil_space_t::get(space_id);
 
@@ -395,17 +388,21 @@ void buf_dblwr_t::recover()
       /* Do not report the warning for undo tablespaces, because they
       can be truncated in place. */
       if (!srv_is_undo_tablespace(space_id))
-        ib::warn() << "A copy of page " << page_no
-                   << " in the doublewrite buffer slot " << page_no_dblwr
-                   << " is beyond the end of " << space->chain.start->name
-                   << " (" << space->size << " pages)";
+        sql_print_warning("InnoDB: A copy of page "
+                          "[page id: space=" UINT32PF
+                          ", page number=" UINT32PF "]"
+                         " in the doublewrite buffer slot " UINT32PF
+                          " is beyond the end of %s (" UINT32PF " pages)",
+                          page_id.space(), page_id.page_no(),
+                          page_no_dblwr, space->chain.start->name,
+                          space->size);
 next_page:
       space->release();
       continue;
     }
 
     const ulint physical_size= space->physical_size();
-    ut_ad(!buf_is_zeroes(span<const byte>(page, physical_size)));
+    ut_ad(!buf_is_zeroes(span<const byte>(*i, physical_size)));
 
     /* We want to ensure that for partial reads the unread portion of
     the page is NUL. */
@@ -417,14 +414,13 @@ next_page:
                             physical_size, read_buf);
 
     if (UNIV_UNLIKELY(fio.err != DB_SUCCESS))
-    {
-       ib::warn() << "Double write buffer recovery: " << page_id
-                  << " ('" << space->chain.start->name
-                  << "') read failed with error: " << fio.err;
-       continue;
-    }
-
-    if (buf_is_zeroes(span<const byte>(read_buf, physical_size)))
+      sql_print_warning("InnoDB: Double write buffer recovery: "
+                        "[page id: space=" UINT32PF
+                        ", page number=" UINT32PF "]"
+                        " ('%s') read failed with error: %s",
+                        page_id.space(), page_id.page_no(), fio.node->name,
+                        ut_strerr(fio.err));
+    else if (buf_is_zeroes(span<const byte>(read_buf, physical_size)))
     {
       /* We will check if the copy in the doublewrite buffer is
       valid. If not, we will ignore this page (there should be redo
@@ -434,24 +430,30 @@ next_page:
       goto next_page;
     else
       /* We intentionally skip this message for all-zero pages. */
-      ib::info() << "Trying to recover page " << page_id
-                 << " from the doublewrite buffer.";
+      sql_print_information("InnoDB: Trying to recover page "
+                            "[page id: space=" UINT32PF
+                            ", page number=" UINT32PF "]"
+                            " from the doublewrite buffer.",
+                            page_id.space(), page_id.page_no());
 
-    page= recv_sys.dblwr.find_page(page_id, space, buf);
+    if (byte *page= recv_sys.dblwr.find_page(page_id, space, buf))
+    {
+      /* Write the good page from the doublewrite buffer to the intended
+      position. */
+      space->reacquire();
+      fio= space->io(IORequestWrite,
+                     os_offset_t{page_id.page_no()} * physical_size,
+                     physical_size, page);
 
-    if (!page)
-      goto next_page;
+      if (fio.err == DB_SUCCESS)
+        sql_print_information("InnoDB: Recovered page "
+                              "[page id: space=" UINT32PF
+                              ", page number=" UINT32PF "]"
+                              " to '%s' from the doublewrite buffer.",
+                              page_id.space(), page_id.page_no(),
+                              fio.node->name);
+    }
 
-    /* Write the good page from the doublewrite buffer to the intended
-    position. */
-    space->reacquire();
-    fio= space->io(IORequestWrite,
-                   os_offset_t{page_id.page_no()} * physical_size,
-                   physical_size, page);
-
-    if (fio.err == DB_SUCCESS)
-      ib::info() << "Recovered page " << page_id << " to '" << fio.node->name
-                 << "' from the doublewrite buffer.";
     goto next_page;
   }
 

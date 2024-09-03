@@ -66,11 +66,6 @@ Protected by log_sys.mutex. */
 bool	recv_no_log_write = false;
 #endif /* UNIV_DEBUG */
 
-/** TRUE if buf_page_is_corrupted() should check if the log sequence
-number (FIL_PAGE_LSN) is in the future.  Initially FALSE, and set by
-recv_recovery_from_checkpoint_start(). */
-bool	recv_lsn_checks_on;
-
 /** If the following is TRUE, the buffer pool file pages must be invalidated
 after recovery and no ibuf operations are allowed; this becomes TRUE if
 the log record hash table becomes too full, and log records must be merged
@@ -81,11 +76,6 @@ buffer pool before the pages have been recovered to the up-to-date state.
 true means that recovery is running and no operations on the log file
 are allowed yet: the variable name is misleading. */
 bool	recv_no_ibuf_operations;
-
-/** The maximum lsn we see for a page during the recovery process. If this
-is bigger than the lsn we are able to scan up to, that is an indication that
-the recovery failed and the database may be corrupt. */
-static lsn_t	recv_max_page_lsn;
 
 /** Stored physical log record */
 struct log_phys_t : public log_rec_t
@@ -1472,12 +1462,13 @@ void recv_sys_t::create()
 	recovered_lsn = 0;
 	found_corrupt_log = false;
 	found_corrupt_fs = false;
+	early_batch = false;
+	max_page_lsn= 0;
 	mlog_checkpoint_lsn = 0;
 
 	progress_time = time(NULL);
 	ut_ad(pages.empty());
 	pages_it = pages.end();
-	recv_max_page_lsn = 0;
 
 	memset(truncated_undo_spaces, 0, sizeof truncated_undo_spaces);
 	last_stored_lsn = 1;
@@ -2231,6 +2222,25 @@ ATTRIBUTE_COLD void recv_sys_t::wait_for_pool(size_t pages)
   mysql_mutex_unlock(&buf_pool.mutex);
   if (need_more)
     buf_flush_sync_batch(recovered_lsn);
+}
+
+/** Check if a FIL_PAGE_LSN is valid during recovery.
+@param lsn    the FIL_PAGE_LSN
+@return the current log sequence number
+@retval 0     if the current log sequence number is unknown */
+ATTRIBUTE_COLD lsn_t recv_sys_t::check_page_lsn(lsn_t lsn)
+{
+  ut_ad(lsn);
+  mysql_mutex_assert_owner(&mutex);
+  if (recovered_lsn >= lsn)
+    lsn= 0;
+  else
+  {
+    if (lsn >= max_page_lsn)
+      max_page_lsn= lsn;
+    lsn= early_batch ? 0 : recovered_lsn;
+  }
+  return lsn;
 }
 
 /** Register a redo log snippet for a page.
@@ -3117,8 +3127,7 @@ set_start_lsn:
 			buf_pool.corrupted_evict(&block->page,
 						 block->page.state() &
 						 buf_page_t::LRU_MASK);
-			block = nullptr;
-			goto done;
+			return nullptr;
 		}
 
 		if (!start_lsn) {
@@ -3156,12 +3165,6 @@ set_start_lsn:
 
 	mtr.discard_modifications();
 	mtr.commit();
-
-done:
-	/* FIXME: do this in page read, protected with recv_sys.mutex! */
-	if (recv_max_page_lsn < page_lsn) {
-		recv_max_page_lsn = page_lsn;
-	}
 
 	return block;
 }
@@ -3682,6 +3685,7 @@ void recv_sys_t::apply(bool last_batch)
   DBUG_ASSERT(!last_batch == mysql_mutex_is_owner(&log_sys.mutex));
 #endif /* SAFE_MUTEX */
   mysql_mutex_lock(&mutex);
+  early_batch= !last_batch;
 
   garbage_collect();
 
@@ -4111,7 +4115,6 @@ recv_group_scan_log_recs(
 	recv_sys.scanned_lsn = *contiguous_lsn;
 	recv_sys.recovered_lsn = *contiguous_lsn;
 	recv_sys.scanned_checkpoint_no = 0;
-	ut_ad(recv_max_page_lsn == 0);
 	mysql_mutex_unlock(&recv_sys.mutex);
 
 	lsn_t	start_lsn;
@@ -4448,6 +4451,22 @@ dberr_t recv_recovery_read_max_checkpoint()
   return err;
 }
 
+inline
+bool recv_sys_t::validate_checkpoint(lsn_t start_lsn, lsn_t end_lsn) const
+{
+  if (recovered_lsn >= start_lsn &&
+      recovered_lsn >= end_lsn &&
+      recovered_lsn >= max_page_lsn)
+    return false;
+  sql_print_error("InnoDB: The log was only scanned up to "
+                  LSN_PF ", while the current LSN at the "
+                  "time of the latest checkpoint " LSN_PF
+                  " was " LSN_PF
+                  " and the maximum LSN on a data page was " LSN_PF "!",
+                  recovered_lsn, start_lsn, end_lsn, max_page_lsn);
+  return true;
+}
+
 /** Start recovering from a redo log checkpoint.
 @param[in]	flush_lsn	FIL_PAGE_FILE_FLUSH_LSN
 of first system tablespace page
@@ -4660,8 +4679,10 @@ completed:
 		recv_sys.parse_start_lsn = checkpoint_lsn;
 
 		if (srv_operation <= SRV_OPERATION_EXPORT_RESTORED) {
+			mysql_mutex_lock(&recv_sys.mutex);
 			deferred_spaces.deferred_dblwr();
 			buf_dblwr.recover();
+			mysql_mutex_unlock(&recv_sys.mutex);
 		}
 
 		ut_ad(srv_force_recovery <= SRV_FORCE_NO_UNDO_LOG_SCAN);
@@ -4694,25 +4715,8 @@ completed:
 	}
 
 	if (!log_sys.is_physical()) {
-	} else if (recv_sys.recovered_lsn < checkpoint_lsn
-		   || recv_sys.recovered_lsn < end_lsn) {
-		sql_print_error("InnoDB: The log was only scanned up to "
-				LSN_PF ", while the current LSN at the "
-				"time of the latest checkpoint " LSN_PF
-				" was " LSN_PF "!",
-				recv_sys.recovered_lsn,
-				checkpoint_lsn, end_lsn);
+	} else if (recv_sys.validate_checkpoint(checkpoint_lsn, end_lsn)) {
 		goto err_exit;
-	} else if (log_sys.log.scanned_lsn < checkpoint_lsn
-		   || log_sys.log.scanned_lsn < end_lsn
-		   || log_sys.log.scanned_lsn < recv_max_page_lsn) {
-		sql_print_error("InnoDB: We scanned the log up to " LSN_PF
-				". A checkpoint was at " LSN_PF
-				" and the maximum LSN on a database page was "
-				LSN_PF ". It is possible that the"
-				" database is now corrupt!",
-				log_sys.log.scanned_lsn, checkpoint_lsn,
-				recv_max_page_lsn);
 	}
 
 	log_sys.next_checkpoint_lsn = checkpoint_lsn;
@@ -4755,7 +4759,6 @@ completed:
 		err = recv_rename_files();
 	}
 
-	recv_lsn_checks_on = true;
 	mysql_mutex_unlock(&recv_sys.mutex);
 
 	/* The database is now ready to start almost normal processing of user
@@ -4771,11 +4774,14 @@ completed:
 bool recv_dblwr_t::validate_page(const page_id_t page_id,
                                  const byte *page,
                                  const fil_space_t *space,
-                                 byte *tmp_buf)
+                                 byte *tmp_buf, bool dblwr)
 {
+  mysql_mutex_assert_owner(&recv_sys.mutex);
+  ulint flags;
+
   if (page_id.page_no() == 0)
   {
-    ulint flags= fsp_header_get_flags(page);
+    flags= fsp_header_get_flags(page);
     if (!fil_space_t::is_valid_flags(flags, page_id.space()))
     {
       ulint cflags= fsp_flags_convert_from_101(flags);
@@ -4790,7 +4796,22 @@ bool recv_dblwr_t::validate_page(const page_id_t page_id,
     }
 
     /* Page 0 is never page_compressed or encrypted. */
-    return !buf_page_is_corrupted(true, page, flags);
+    goto check_if_corrupted;
+  }
+
+  flags= space->flags;
+
+  if (space->full_crc32())
+  {
+  check_if_corrupted:
+    if (buf_page_is_corrupted(false, page, flags))
+      return false;
+    if (!dblwr)
+      /* The doublewrite buffer copy may legitimately carry a future
+      FIL_PAGE_LSN. recv_dblwr_t::find_page() and buf_dblwr_t::recover()
+      will deal with that.  */
+      recv_sys.check_page_lsn(mach_read_from_8(page + FIL_PAGE_LSN));
+    return true;
   }
 
   ut_ad(tmp_buf);
@@ -4799,9 +4820,6 @@ bool recv_dblwr_t::validate_page(const page_id_t page_id,
   const uint16_t page_type= mach_read_from_2(page + FIL_PAGE_TYPE);
   const bool expect_encrypted= space->crypt_data &&
     space->crypt_data->type != CRYPT_SCHEME_UNENCRYPTED;
-
-  if (space->full_crc32())
-    return !buf_page_is_corrupted(true, page, space->flags);
 
   if (expect_encrypted &&
       mach_read_from_4(page + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION))
@@ -4829,17 +4847,17 @@ bool recv_dblwr_t::validate_page(const page_id_t page_id,
       return false; /* decompression failed */
     if (decomp == srv_page_size)
       return false; /* the page was not compressed (invalid page type) */
-    return !buf_page_is_corrupted(true, tmp_page, space->flags);
+    page= tmp_page;
   }
 
-  return !buf_page_is_corrupted(true, page, space->flags);
+  goto check_if_corrupted;
 }
 
 byte *recv_dblwr_t::find_page(const page_id_t page_id,
                               const fil_space_t *space, byte *tmp_buf)
 {
-  byte *result= NULL;
-  lsn_t max_lsn= 0;
+  byte *result= nullptr;
+  lsn_t min_lsn= LSN_MAX;
 
   for (byte *page : pages)
   {
@@ -4855,19 +4873,21 @@ byte *recv_dblwr_t::find_page(const page_id_t page_id,
     }
 
     const lsn_t lsn= mach_read_from_8(page + FIL_PAGE_LSN);
-    if (lsn <= max_lsn ||
-        !validate_page(page_id, page, space, tmp_buf))
+    if (lsn > min_lsn ||
+        lsn < recv_sys.parse_start_lsn ||
+        !validate_page(page_id, page, space, tmp_buf, true))
     {
       /* Mark processed for subsequent iterations in buf_dblwr_t::recover() */
-      memset(page + FIL_PAGE_LSN, 0, 8);
+      memset_aligned<8>(page + FIL_PAGE_LSN, 0, 8);
       continue;
     }
 
-    ut_a(page_get_page_no(page) == page_id.page_no());
-    max_lsn= lsn;
+    min_lsn= lsn;
     result= page;
   }
 
+  if (result)
+    recv_sys.check_page_lsn(min_lsn);
   return result;
 }
 
@@ -4926,30 +4946,36 @@ early_exit:
   return 0;
 }
 
-bool recv_dblwr_t::restore_first_page(ulint space_id, const char *name,
-                                      pfs_os_file_t file)
+dberr_t recv_dblwr_t::restore_first_page(ulint space_id, const char *name,
+                                         pfs_os_file_t file)
 {
+  mysql_mutex_assert_owner(&recv_sys.mutex);
+
+  if (pages.empty())
+    return DB_CORRUPTION;
+
   const page_id_t page_id(space_id, 0);
-  const byte* page= find_page(page_id);
+  const byte *page= find_page(page_id);
+
   if (!page)
   {
     /* If the first page of the given user tablespace is not there
     in the doublewrite buffer, then the recovery is going to fail
     now. Report error only when doublewrite buffer is not empty */
-    if (pages.size())
-      ib::error() << "Corrupted page " << page_id << " of datafile '"
-                  << name <<"' could not be found in the "
-                  <<"doublewrite buffer.";
-    return true;
+    sql_print_error("InnoDB: Corrupted page "
+                    "[page id: space=" UINT32PF ", page number=0]"
+                    " of datafile '%s' could not be found"
+                    " in the doublewrite buffer", page_id.space(), name);
+    return DB_CORRUPTION;
   }
 
-  ulint physical_size= fil_space_t::physical_size(
-    mach_read_from_4(page + FSP_HEADER_OFFSET + FSP_SPACE_FLAGS));
-  ib::info() << "Restoring page " << page_id << " of datafile '"
-          << name << "' from the doublewrite buffer. Writing "
-          << physical_size << " bytes into file '" << name << "'";
+  unsigned physical_size=
+    fil_space_t::physical_size(mach_read_from_4(FSP_HEADER_OFFSET +
+                                                FSP_SPACE_FLAGS + page));
+  sql_print_information("InnoDB: Restoring page "
+                        "[page id: space=" UINT32PF ", page number=0]"
+                        " of datafile '%s' from the doublewrite buffer",
+                        page_id.space(), name);
 
-  return os_file_write(
-           IORequestWrite, name, file, page, 0, physical_size) !=
-         DB_SUCCESS;
+  return os_file_write(IORequestWrite, name, file, page, 0, physical_size);
 }

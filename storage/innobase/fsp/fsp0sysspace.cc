@@ -590,9 +590,11 @@ SysTablespace::read_lsn_and_check_flags(lsn_t* flushed_lsn)
 	err = it->validate_first_page(flushed_lsn);
 
 	if (err != DB_SUCCESS) {
-		if (recv_sys.dblwr.restore_first_page(
-				it->m_space_id, it->m_filepath,
-				it->handle())) {
+		mysql_mutex_lock(&recv_sys.mutex);
+		err = recv_sys.dblwr.restore_first_page(
+			it->m_space_id, it->m_filepath, it->handle());
+		mysql_mutex_unlock(&recv_sys.mutex);
+		if (err != DB_SUCCESS) {
 			it->close();
 			return(err);
 		}

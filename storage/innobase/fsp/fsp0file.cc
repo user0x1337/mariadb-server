@@ -305,7 +305,7 @@ Datafile::read_first_page(bool read_only_mode)
 		m_flags = fsp_header_get_flags(m_first_page);
 		if (!fil_space_t::is_valid_flags(m_flags, m_space_id)) {
 			ulint cflags = fsp_flags_convert_from_101(m_flags);
-			if (cflags == ULINT_UNDEFINED) {
+			if (unsigned(cflags) == ~0U) {
 				switch (fsp_flags_is_incompatible_mysql(m_flags)) {
 				case 0:
 					sql_print_error("InnoDB: Invalid flags 0x%zx in %s",
@@ -571,8 +571,13 @@ err_exit:
 		goto err_exit;
 	}
 
-	if (buf_page_is_corrupted(false, m_first_page, m_flags)) {
-		/* Look for checksum and other corruptions. */
+	switch (buf_page_is_corrupted(false, m_first_page, m_flags)) {
+	case NOT_CORRUPTED:
+		break;
+	case CORRUPTED_FUTURE_LSN:
+		error_txt = "LSN is in the future";
+		goto err_exit;
+	case CORRUPTED_OTHER:
 		error_txt = "Checksum mismatch";
 		goto err_exit;
 	}

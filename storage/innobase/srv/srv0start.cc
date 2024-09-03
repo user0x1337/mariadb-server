@@ -743,29 +743,30 @@ srv_undo_tablespaces_init(bool create_new_db)
                  srv_operation == SRV_OPERATION_RESTORE_DELTA)
     ? srv_undo_tablespaces : TRX_SYS_N_RSEGS;
 
-  if (dberr_t err= srv_all_undo_tablespaces_open(create_new_db, n_undo))
-    return err;
+  mysql_mutex_lock(&recv_sys.mutex);
+  dberr_t err= srv_all_undo_tablespaces_open(create_new_db, n_undo);
+  mysql_mutex_unlock(&recv_sys.mutex);
 
   /* Initialize srv_undo_space_id_start=0 when there are no
   dedicated undo tablespaces. */
   if (srv_undo_tablespaces_open == 0)
     srv_undo_space_id_start= 0;
 
-  if (create_new_db)
+  if (err == DB_SUCCESS && create_new_db)
   {
     mtr_t mtr;
     for (ulint i= 0; i < srv_undo_tablespaces; ++i)
     {
       mtr.start();
-      dberr_t err= fsp_header_init(fil_space_get(srv_undo_space_id_start + i),
-                                   SRV_UNDO_TABLESPACE_SIZE_IN_PAGES, &mtr);
+      err= fsp_header_init(fil_space_get(srv_undo_space_id_start + i),
+                           SRV_UNDO_TABLESPACE_SIZE_IN_PAGES, &mtr);
       mtr.commit();
       if (err)
-        return err;
+        break;
     }
   }
 
-  return DB_SUCCESS;
+  return err;
 }
 
 /** Create the temporary file tablespace.

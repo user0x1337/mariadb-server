@@ -308,12 +308,20 @@ buf_block_modify_clock_inc(
 @return whether the buffer is all zeroes */
 bool buf_is_zeroes(st_::span<const byte> buf);
 
+/** Reason why buf_page_is_corrupted() fails */
+enum buf_page_is_corrupted_reason
+{
+  CORRUPTED_FUTURE_LSN= -1,
+  NOT_CORRUPTED= 0,
+  CORRUPTED_OTHER
+};
+
 /** Check if a page is corrupt.
 @param[in]	check_lsn	whether the LSN should be checked
 @param[in]	read_buf	database page
 @param[in]	fsp_flags	tablespace flags
 @return whether the page is corrupted */
-bool
+buf_page_is_corrupted_reason
 buf_page_is_corrupted(
 	bool			check_lsn,
 	const byte*		read_buf,
