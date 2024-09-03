@@ -2598,7 +2598,7 @@ static Sys_var_on_access_global<
         "slave_abort_blocking_timeout",
         "Maximum time a slave DDL will wait for a blocking SELECT or other "
         "user query until that query will be aborted. The argument will be "
-        "treated as a decimal value with microsecond precision",
+        "treated as a decimal value with nanosecond precision",
         GLOBAL_VAR(slave_abort_blocking_timeout), CMD_LINE(REQUIRED_ARG),
         VALID_RANGE(0, LONG_TIMEOUT), DEFAULT(LONG_TIMEOUT), NO_MUTEX_GUARD,
         NOT_IN_BINLOG);

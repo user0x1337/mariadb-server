@@ -2404,6 +2404,11 @@ MDL_context::acquire_lock(MDL_request *mdl_request, double lock_wait_timeout)
   if (abort_blocking_timeout < lock_wait_timeout &&
       m_owner->get_thd()->rgi_slave)
   {
+    /*
+      After @@slave_abort_blocking_timeout seconds, kill non-replication
+      queries that are blocking a replication event (such as an ALTER TABLE)
+      from proceeding.
+    */
     set_timespec_nsec(abs_abort_blocking_timeout,
                       (ulonglong)(abort_blocking_timeout * 1000000000ULL));
     abort_blocking_enabled= true;
@@ -2428,7 +2433,7 @@ MDL_context::acquire_lock(MDL_request *mdl_request, double lock_wait_timeout)
       abort_blocking= true;
       abort_blocking_enabled= false;
     }
-    if (cmp_timespec(abs_shortwait, abs_timeout) > 0)
+    else if (cmp_timespec(abs_shortwait, abs_timeout) > 0)
       break;
 
     /* abs_timeout is far away. Wait a short while and notify locks. */

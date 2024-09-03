@@ -4015,7 +4015,7 @@ COMMAND_LINE_ARGUMENT	OPTIONAL
 VARIABLE_NAME	SLAVE_ABORT_BLOCKING_TIMEOUT
 VARIABLE_SCOPE	GLOBAL
 VARIABLE_TYPE	DOUBLE
-VARIABLE_COMMENT	Maximum time a slave DDL will wait for a blocking SELECT or other user query until that query will be aborted. The argument will be treated as a decimal value with microsecond precision
+VARIABLE_COMMENT	Maximum time a slave DDL will wait for a blocking SELECT or other user query until that query will be aborted. The argument will be treated as a decimal value with nanosecond precision
 NUMERIC_MIN_VALUE	0
 NUMERIC_MAX_VALUE	31536000
 NUMERIC_BLOCK_SIZE	NULL

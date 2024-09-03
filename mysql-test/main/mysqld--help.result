@@ -1305,7 +1305,7 @@ The following specify which files/extra groups are read (specified before remain
  Maximum time a slave DDL will wait for a blocking SELECT
  or other user query until that query will be aborted. The
  argument will be treated as a decimal value with
- microsecond precision
+ nanosecond precision
  --slave-compressed-protocol 
  Use compression on master/slave protocol
  --slave-connections-needed-for-purge=# 
