@@ -166,6 +166,24 @@ int ed25519_derive_public_key(const uchar *raw_private_key, uchar *pub_key)
 #endif
 }
 
+static int hash_password(const char *password, size_t password_length,
+                         Passwd_in_memory *derivation)
+{
+  derivation->algorithm= 'P';
+  derivation->iterations= 0;
+  int err= my_random_bytes(derivation->salt, sizeof(derivation->salt));
+  if (err != MY_AES_OK)
+    return 1;
+
+  uchar derived_key[PBKDF2_HASH_LENGTH];
+  if (compute_derived_key(password, password_length, derivation, derived_key))
+    return 1;
+
+  if (ed25519_derive_public_key(derived_key, derivation->pub_key))
+    return 1;
+  return 0;
+}
+
 static
 int hash_password(const char *password, size_t password_length,
                   char *hash, size_t *hash_length)
@@ -175,15 +193,7 @@ int hash_password(const char *password, size_t password_length,
     return 1;
 
   Passwd_in_memory memory;
-  memory.algorithm= 'P';
-  memory.iterations= 0;
-  my_random_bytes(memory.salt, sizeof(memory.salt));
-
-  uchar derived_key[PBKDF2_HASH_LENGTH];
-  if (compute_derived_key(password, password_length, &memory, derived_key))
-    return 1;
-
-  if (ed25519_derive_public_key(derived_key, memory.pub_key))
+  if (hash_password(password, password_length, &memory))
     return 1;
 
   stored->algorithm= memory.algorithm;
@@ -260,7 +270,14 @@ int auth(MYSQL_PLUGIN_VIO *vio, MYSQL_SERVER_AUTH_INFO *info)
 
   auto passwd= (Passwd_in_memory*)info->auth_string;
 
-  if (vio->write_packet(vio, (uchar*)info->auth_string, 2 + CHALLENGE_SALT_LENGTH))
+  Passwd_in_memory zero_passwd_derivation;
+  if (info->auth_string_length == 0) // Empty passwd
+  {
+    hash_password("", 0, &zero_passwd_derivation);
+    passwd= &zero_passwd_derivation;
+  }
+
+  if (vio->write_packet(vio, (uchar*)passwd, 2 + CHALLENGE_SALT_LENGTH))
     return CR_ERROR;
 
   Client_signed_response *client_response;
