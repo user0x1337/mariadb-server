@@ -36,6 +36,7 @@
 #include "sql_i_s.h"
 #include "sql_type.h"               /* vers_kind_t */
 #include "privilege.h"              /* privilege_t */
+#include "my_bit.h"
 
 /*
   Buffer for unix timestamp in microseconds:
@@ -1882,6 +1883,53 @@ typedef struct st_foreign_key_info
   LEX_CSTRING *referenced_key_name;
   List<LEX_CSTRING> foreign_fields;
   List<LEX_CSTRING> referenced_fields;
+  unsigned char *fields_nullable= nullptr;
+
+  unsigned get_n_fields() const
+  {
+    unsigned n_fields= foreign_fields.elements;
+    if (n_fields == 0)
+      n_fields= referenced_fields.elements;
+    return n_fields;
+  }
+
+  /*
+    Assign foreign key nullable field based on number of fields
+  */
+  void assign_nullable(THD *thd, unsigned num_fields)
+  {
+    fields_nullable= (unsigned char *)thd_calloc(
+      thd, my_bits_in_bytes(2 * num_fields) * 8);
+  }
+
+  /*
+    Set nullable bit for the field in the given field
+    @param field_no field number
+    @param foreign  set foreign field
+  */
+  void set_nullable(bool referenced, unsigned field)
+  {
+    unsigned n_field= get_n_fields();
+    DBUG_ASSERT(field < n_field);
+    size_t bit= size_t{field} + referenced * n_field;
+    fields_nullable[bit]= (unsigned char) 1;
+  }
+
+  /*
+    Check whether the given field_no in foreign key field or
+    referenced key field
+    @param field_no  field number
+    @param foreign   check foreign field
+    @return true if the field is nullable or false if it is not
+  */
+  bool is_nullable(bool referenced, unsigned field) const
+  {
+    unsigned n_field= get_n_fields();
+    DBUG_ASSERT(field < n_field);
+    size_t bit= size_t{field} + referenced * n_field;
+    return fields_nullable[bit];
+  }
+
 } FOREIGN_KEY_INFO;
 
 LEX_CSTRING *fk_option_name(enum_fk_option opt);
