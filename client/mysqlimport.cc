@@ -45,6 +45,8 @@
 #include <my_dir.h>
 
 tpool::thread_pool *thread_pool;
+static std::vector<MYSQL *> all_tp_connections;
+static void kill_tp_connections(MYSQL *mysql);
 
 static void db_error_with_table(MYSQL *mysql, char *table);
 static void db_error(MYSQL *mysql);
@@ -880,20 +882,33 @@ static void db_disconnect(char *host, MYSQL *mysql)
 
 static void safe_exit(int error, MYSQL *mysql)
 {
+
   if (error && ignore_errors)
     return;
-
-  if (mysql)
-    mysql_close(mysql);
 
   if (thread_pool)
   {
     /* dirty exit. some threads are running,
-       memory is not freed, openssl not deinitialized */
+    memory is not freed, openssl not deinitialized */
     DBUG_ASSERT(error);
+    if (mysql)
+    {
+      /*
+        We still need tell server to kill all connections
+        so it does not keep busy with load.
+      */
+      static std::mutex exit_mutex;
+      std::lock_guard<std::mutex> lock(exit_mutex);
+      kill_tp_connections(mysql);
+      all_tp_connections.clear();
+    }
+
     _exit(error);
   }
-
+  if (mysql)
+  {
+    mysql_close(mysql);
+  }
   mysql_library_end();
   free_defaults(argv_to_free);
   my_free(opt_password);
@@ -999,16 +1014,47 @@ void load_single_table(void *arg)
     set_exitcode(error);
 }
 
+static void init_tp_connections(size_t n)
+{
+  for (size_t i= 0; i < n; i++)
+  {
+    all_tp_connections[i]=
+        db_connect(current_host, current_db, current_user, opt_password);
+  }
+}
+
+static void close_tp_connections()
+{
+  for (auto &conn : all_tp_connections)
+  {
+    db_disconnect(current_host, conn);
+  }
+  all_tp_connections.clear();
+}
+
+/*
+  If we end with an error, in one connection,
+  we need to kill all others.
+
+  Otherwise, server will still be busy with load,
+  when we already exited.
+*/
+static void kill_tp_connections(MYSQL *mysql)
+{
+  for (auto &conn : all_tp_connections)
+    mysql_kill(mysql, mysql_thread_id(conn));
+}
+
 static void tpool_thread_init(void)
 {
   mysql_thread_init();
-  thread_local_mysql= db_connect(current_host,current_db,current_user,opt_password);
+  static std::atomic<size_t> next_connection(0);
+  assert(next_connection < all_tp_connections.size());
+  thread_local_mysql= all_tp_connections[next_connection++];
 }
 
 static void tpool_thread_exit(void)
 {
-  if (thread_local_mysql)
-   db_disconnect(current_host,thread_local_mysql);
   mysql_thread_end();
 }
 
@@ -1196,6 +1242,7 @@ int main(int argc, char **argv)
       fatal_error("Too many connections, max value for --parallel is %d\n",
                   MAX_THREADS);
     }
+    init_tp_connections(opt_use_threads);
     thread_pool= tpool::create_thread_pool_generic(opt_use_threads,opt_use_threads);
     thread_pool->set_thread_callbacks(tpool_thread_init,tpool_thread_exit);
 
@@ -1207,6 +1254,7 @@ int main(int argc, char **argv)
       thread_pool->submit_task(&t);
 
     delete thread_pool;
+    close_tp_connections();
     thread_pool= nullptr;
     files_to_load.clear();
   }
