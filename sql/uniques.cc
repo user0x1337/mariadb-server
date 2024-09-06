@@ -309,23 +309,11 @@ static double get_merge_many_buffs_cost(THD *thd,
       these will be random seeks.
 */
 
-<<<<<<< HEAD
-double Unique_impl::get_use_cost(THD *thd,
-                                 uint *buffer, size_t nkeys, uint key_size,
-                                 size_t max_in_memory_size,
-                                 double compare_factor,
-                                 bool intersect_fl, bool *in_memory)
-||||||| parent of 2ff87b8cf9a (Add Unique support for packed keys)
-double Unique_impl::get_use_cost(uint *buffer, size_t nkeys, uint key_size,
+double Unique::get_use_cost(THD *thd,
+                            uint *buffer, size_t nkeys, uint key_size,
                             size_t max_in_memory_size,
                             double compare_factor,
                             bool intersect_fl, bool *in_memory)
-=======
-double Unique::get_use_cost(uint *buffer, size_t nkeys, uint key_size,
-                            size_t max_in_memory_size,
-                            double compare_factor,
-                            bool intersect_fl, bool *in_memory)
->>>>>>> 2ff87b8cf9a (Add Unique support for packed keys)
 {
   size_t max_elements_in_tree;
   size_t last_tree_elems;
