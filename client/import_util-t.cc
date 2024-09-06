@@ -18,6 +18,13 @@
 #include "import_util.h"
 
 #include <tap.h>
+#include <string>
+
+inline bool operator==(const KeyDefinition &lhs, const KeyDefinition &rhs)
+{
+  return lhs.definition == rhs.definition && lhs.name == rhs.name;
+}
+
 /*
   Test parsing of CREATE TABLE in mariadb-import utility
 */
@@ -29,57 +36,74 @@ static void test_ddl_parser()
   `id` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `title` varchar(200) NOT NULL,
   `author_id` smallint(5) unsigned NOT NULL,
+  `publisher_id` smallint(5) unsigned NOT NULL,
+  `excerpt` text,
   PRIMARY KEY (`id`),
   KEY `fk_book_author` (`author_id`),
+  KEY `fk_book_publisher` (`publisher_id`),
+  UNIQUE KEY `title_author` (`title`,`author`),
+  FULLTEXT KEY `excerpt` (`excerpt`),
   CONSTRAINT `fk_book_author` FOREIGN KEY (`author_id`) REFERENCES `author` (`id`) ON DELETE CASCADE
+  CONSTRAINT `fk_book_publisher` FOREIGN KEY (`publisher_id`) REFERENCES `publisher` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
 )";
 
   auto create_table_stmt= extract_first_create_table(script);
   ok(!create_table_stmt.empty(), "CREATE TABLE statement found");
 
-  TableDDLInfo table_definitions(create_table_stmt);
-  const std::string& pkdef= table_definitions.primary_key.definition;
-  const std::string& table_name= table_definitions.table_name;
-  const std::string& storage_engine= table_definitions.storage_engine;
+  TableDDLInfo ddl_info(create_table_stmt);
 
-  ok(table_name == "`book`", "Table name is %s",table_name.c_str());
-  ok(storage_engine == "InnoDB", "Storage engine is %s", storage_engine.c_str());
-  ok(pkdef == "PRIMARY KEY (`id`)", "Primary key def is %s",pkdef.c_str());
+  const std::string& table_name= ddl_info.table_name;
+  const std::string& storage_engine= ddl_info.storage_engine;
 
-  ok(table_definitions.secondary_indexes.size() == 1, "Secondary indexes size correct");
-  const auto &sec_index= table_definitions.secondary_indexes[0];
-  ok(sec_index.definition == "KEY `fk_book_author` (`author_id`)",
-      "Secondary index definition is %s",sec_index.definition.c_str());
-  ok(sec_index.name == "`fk_book_author`", "Secondary index name is %s",
-     sec_index.name.c_str());
+  ok(table_name == "`book`", "Table name is OK");
+  ok(storage_engine == "InnoDB", "Storage engine is OK");
+  ok(ddl_info.primary_key == KeyDefinition{"PRIMARY KEY (`id`)", "PRIMARY"},
+     "Primary key def is OK");
 
-  ok(table_definitions.constraints.size() == 1, "Constraints size correct");
-  const auto &constraint= table_definitions.constraints[0];
-  ok(constraint.definition ==
-     "CONSTRAINT `fk_book_author` FOREIGN KEY (`author_id`) REFERENCES "
-     "`author` (`id`) ON DELETE CASCADE",
-     "Constraint definition %s", constraint.definition.c_str());
+  ok(ddl_info.secondary_indexes.size() == 4, "Secondary index size is OK");
+  const auto &sec_indexes= ddl_info.secondary_indexes;
+  ok(sec_indexes[0] == KeyDefinition{"KEY `fk_book_author` (`author_id`)","`fk_book_author`"},
+         "First key is OK");
+  ok(sec_indexes[1] ==
+         KeyDefinition{"KEY `fk_book_publisher` (`publisher_id`)",
+                       "`fk_book_publisher`"},
+     "Second key is OK");
 
-  ok(constraint.name == "`fk_book_author`",
-     "Constraint name is %s", constraint.name.c_str());
-  std::string drop_constraints= table_definitions.drop_constraints_sql();
+  ok(ddl_info.constraints.size() == 2, "Constraints size correct");
+  ok(ddl_info.constraints[0] ==
+     KeyDefinition{"CONSTRAINT `fk_book_author` FOREIGN KEY (`author_id`) REFERENCES "
+     "`author` (`id`) ON DELETE CASCADE","`fk_book_author`"},
+     "First constraint OK");
+
+  std::string drop_constraints= ddl_info.drop_constraints_sql();
   ok(drop_constraints ==
-     "ALTER TABLE `book` DROP CONSTRAINT `fk_book_author`",
+     "ALTER TABLE `book` DROP CONSTRAINT `fk_book_author`, DROP CONSTRAINT `fk_book_publisher`",
      "Drop constraints SQL is \"%s\"", drop_constraints.c_str());
-  std::string add_constraints= table_definitions.add_constraints_sql();
+  std::string add_constraints= ddl_info.add_constraints_sql();
   ok(add_constraints ==
-      "ALTER TABLE `book` ADD CONSTRAINT `fk_book_author` FOREIGN KEY "
-     "(`author_id`) REFERENCES `author` (`id`) ON DELETE CASCADE",
-      "Add constraints SQL is \"%s\"",add_constraints.c_str());
+      "ALTER TABLE `book` ADD CONSTRAINT `fk_book_author` FOREIGN KEY (`author_id`) "
+      "REFERENCES `author` (`id`) ON DELETE CASCADE, "
+      "ADD CONSTRAINT `fk_book_publisher` FOREIGN KEY (`publisher_id`) "
+      "REFERENCES `publisher` (`id`) ON DELETE CASCADE",
+    "Add constraints SQL is \"%s\"",add_constraints.c_str());
 
   std::string drop_secondary_indexes=
-      table_definitions.drop_secondary_indexes_sql();
-  ok(drop_secondary_indexes == "ALTER TABLE `book` DROP INDEX `fk_book_author`",
+      ddl_info.drop_secondary_indexes_sql();
+  ok(drop_secondary_indexes ==
+     "ALTER TABLE `book` "
+      "DROP INDEX `fk_book_author`, "
+      "DROP INDEX `fk_book_publisher`, "
+      "DROP INDEX `title_author`, "
+      "DROP INDEX `excerpt`",
      "Drop secondary indexes SQL is \"%s\"", drop_secondary_indexes.c_str());
   std::string add_secondary_indexes=
-      table_definitions.add_secondary_indexes_sql();
-  ok(add_secondary_indexes == "ALTER TABLE `book` ADD KEY `fk_book_author` (`author_id`)",
+      ddl_info.add_secondary_indexes_sql();
+  ok(add_secondary_indexes ==
+     "ALTER TABLE `book` ADD KEY `fk_book_author` (`author_id`), "
+     "ADD KEY `fk_book_publisher` (`publisher_id`), "
+     "ADD UNIQUE KEY `title_author` (`title`,`author`), "
+     "ADD FULLTEXT KEY `excerpt` (`excerpt`)",
      "Add secondary indexes SQL is \"%s\"", add_secondary_indexes.c_str());
 }
 
@@ -94,26 +118,29 @@ static void innodb_non_pk_clustering_key()
   auto create_table_stmt= R"(
   CREATE TABLE `book` (
   `id` mediumint(8),
-   UNIQUE KEY `id` (`id`)
+  `uniq` varchar(200),
+   UNIQUE KEY `id` (`id`),
+   UNIQUE KEY `uniq` (`uniq`),
+   KEY `id_uniq` (`id`,`uniq`)
   ) ENGINE=InnoDB;
  )";
-  TableDDLInfo table_definitions(create_table_stmt);
-  ok(table_definitions.non_pk_clustering_key_name == "`id`",
+  TableDDLInfo ddl_info(create_table_stmt);
+  ok(ddl_info.non_pk_clustering_key_name == "`id`",
      "Non-PK clustering key is %s",
-     table_definitions.non_pk_clustering_key_name.c_str());
-  ok(table_definitions.primary_key.definition.empty(),
-     "Primary key is %s", table_definitions.primary_key.definition.c_str());
-  ok(table_definitions.secondary_indexes.size() == 1,
+     ddl_info.non_pk_clustering_key_name.c_str());
+  ok(ddl_info.primary_key.definition.empty(),
+     "Primary key is %s", ddl_info.primary_key.definition.c_str());
+  ok(ddl_info.secondary_indexes.size() == 3,
      "Secondary indexes size is %zu",
-     table_definitions.secondary_indexes.size());
-  ok(table_definitions.add_secondary_indexes_sql().empty(),
-     "No secondary indexes to add");
-  ok(table_definitions.drop_secondary_indexes_sql().empty(),
-     "No secondary indexes to drop");
+     ddl_info.secondary_indexes.size());
+  ok(!ddl_info.add_secondary_indexes_sql().empty(),
+     "Some secondary indexes to add");
+  ok(!ddl_info.drop_secondary_indexes_sql().empty(),
+     "Some secondary indexes to drop");
 }
 int main()
 {
-  plan(19);
+  plan(18);
   diag("Testing DDL parser");
 
   test_ddl_parser();

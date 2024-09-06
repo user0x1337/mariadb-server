@@ -27,6 +27,7 @@
 #include <pcre2posix.h>
 
 #include "import_util.h"
+#include <assert.h>
 
 /**
  * Extract the first CREATE TABLE statement from a script.
@@ -67,7 +68,7 @@ TableDDLInfo::TableDDLInfo(const std::string &create_table_stmt)
           "\\n\\s*(CONSTRAINT\\s+(`?(?:[^`]|``)+`?)\\s+.*?),?\\n",
           REG_EXTENDED);
   regcomp(&index_regex,
-          "\\n\\s*((UNIQUE|FULLTEXT|SPATIAL|VECTOR)\\s+)?(INDEX|KEY)\\s+(`?(?:[^`]|``)+`?)\\s+.*?),?\\n",
+          "\\n\\s*(((?:UNIQUE|FULLTEXT)\\s+)?(INDEX|KEY)\\s+(`(?:[^`]|``)+`)\\s+.*?),?\\n",
           REG_EXTENDED);
   regcomp(&engine_regex, "\\bENGINE\\s*=\\s*(\\w+)", REG_EXTENDED);
   regcomp(&table_name_regex, "CREATE\\s+TABLE\\s+(`?(?:[^`]|``)+`?)\\s*\\(",
@@ -79,51 +80,43 @@ TableDDLInfo::TableDDLInfo(const std::string &create_table_stmt)
   // Extract primary key
   if (regexec(&primary_key_regex, search_start, MAX_MATCHES, match, 0) == 0)
   {
-    primary_key= {create_table_stmt.substr(match[1].rm_so,
-                                           match[1].rm_eo - match[1].rm_so),
-                  "PRIMARY"};
+    primary_key= {std::string(stmt + match[1].rm_so,  match[1].rm_eo - match[1].rm_so),
+        "PRIMARY"};
   }
 
   // Extract constraints and foreign keys
   search_start= stmt;
   while (regexec(&constraint_regex, search_start, MAX_MATCHES, match, 0) == 0)
   {
-    auto name= match[2].rm_so != -1
-                   ? create_table_stmt.substr(match[2].rm_so,
-                                              match[2].rm_eo - match[2].rm_so)
-                   : "";
-    auto definition= create_table_stmt.substr(match[1].rm_so,
-                                              match[1].rm_eo - match[1].rm_so);
+    assert(match[2].rm_so != -1);
+    assert(match[1].rm_so != -1);
+    std::string name(search_start + match[2].rm_so, match[2].rm_eo - match[2].rm_so);
+    std::string definition(search_start + match[1].rm_so, match[1].rm_eo - match[1].rm_so);
     constraints.push_back({definition, name});
-    search_start+= match[0].rm_eo;
+    search_start+= match[0].rm_eo - 1;
   }
 
   // Extract secondary indexes
   search_start= stmt;
   while (regexec(&index_regex, search_start, MAX_MATCHES, match, 0) == 0)
   {
-    auto name= match[4].rm_so != -1
-                   ? create_table_stmt.substr(match[4].rm_so,
-                                              match[4].rm_eo - match[4].rm_so)
-                   : "";
-    auto definition= create_table_stmt.substr(match[1].rm_so,
-                                              match[1].rm_eo - match[1].rm_so);
+    assert(match[4].rm_so != -1);
+    std::string name(search_start + match[4].rm_so, match[4].rm_eo - match[4].rm_so);
+    std::string definition(search_start + match[1].rm_so, match[1].rm_eo - match[1].rm_so);
     secondary_indexes.push_back({definition, name});
-    search_start+= match[0].rm_eo;
+    search_start+= match[0].rm_eo -1;
   }
 
   // Extract storage engine
   if (regexec(&engine_regex, stmt, MAX_MATCHES, match, 0) == 0)
   {
-    storage_engine= create_table_stmt.substr(match[1].rm_so,
-                                             match[1].rm_eo - match[1].rm_so);
+    storage_engine= std::string(stmt + match[1].rm_so,  match[1].rm_eo - match[1].rm_so);
   }
 
   // Extract table name
   if (regexec(&table_name_regex, stmt, MAX_MATCHES, match, 0) == 0)
   {
-    table_name= create_table_stmt.substr(match[1].rm_so,
-                                         match[1].rm_eo - match[1].rm_so);
+    table_name= std::string(stmt + match[1].rm_so,  match[1].rm_eo - match[1].rm_so);
   }
   if (primary_key.definition.empty() && storage_engine == "InnoDB")
   {
