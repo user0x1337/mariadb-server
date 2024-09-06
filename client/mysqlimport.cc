@@ -1018,8 +1018,9 @@ static void init_tp_connections(size_t n)
 {
   for (size_t i= 0; i < n; i++)
   {
-    all_tp_connections[i]=
+    MYSQL *mysql=
         db_connect(current_host, current_db, current_user, opt_password);
+    all_tp_connections.push_back(mysql);
   }
 }
 
