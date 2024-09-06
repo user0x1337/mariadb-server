@@ -684,6 +684,9 @@ static int handle_one_table(const table_load_params *params, MYSQL *mysql)
     }
   }
 
+  if (exec_sql(mysql, "SET collation_database=binary"))
+    DBUG_RETURN(1);
+
   to_unix_path(hard_path);
   if (verbose)
   {
