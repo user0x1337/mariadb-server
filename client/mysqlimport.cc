@@ -46,6 +46,7 @@
 
 tpool::thread_pool *thread_pool;
 static std::vector<MYSQL *> all_tp_connections;
+std::atomic<bool> aborting{false};
 static void kill_tp_connections(MYSQL *mysql);
 
 static void db_error_with_table(MYSQL *mysql, char *table);
@@ -591,6 +592,8 @@ static int handle_one_table(const table_load_params *params, MYSQL *mysql)
   DBUG_ENTER("handle_one_table");
   DBUG_PRINT("enter",("datafile: %s",params->data_file.c_str()));
 
+  if (aborting)
+    return 1;
   if (verbose && !params->sql_file.empty())
   {
     fprintf(stdout, "Executing SQL script %s\n", params->sql_file.c_str());
@@ -886,6 +889,10 @@ static void safe_exit(int error, MYSQL *mysql)
   if (error && ignore_errors)
     return;
 
+  bool expected= false;
+  if (!aborting.compare_exchange_strong(expected, true))
+    return;
+
   if (thread_pool)
   {
     /* dirty exit. some threads are running,
@@ -897,10 +904,7 @@ static void safe_exit(int error, MYSQL *mysql)
         We still need tell server to kill all connections
         so it does not keep busy with load.
       */
-      static std::mutex exit_mutex;
-      std::lock_guard<std::mutex> lock(exit_mutex);
       kill_tp_connections(mysql);
-      all_tp_connections.clear();
     }
 
     _exit(error);
@@ -920,6 +924,8 @@ static void safe_exit(int error, MYSQL *mysql)
 
 static void db_error_with_table(MYSQL *mysql, char *table)
 {
+  if (aborting)
+    return;
   my_printf_error(0,"Error: %d, %s, when using table: %s",
 		  MYF(0), mysql_errno(mysql), mysql_error(mysql), table);
   safe_exit(1, mysql);
