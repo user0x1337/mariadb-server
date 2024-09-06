@@ -240,6 +240,7 @@ Adding constraints for table users
 Executing SQL script vardir/tmp/dump/db2/child.sql
 Loading data from SERVER file: vardir/tmp/dump/db2/child.txt into child
 db2.child: Records: 4  Deleted: 0  Skipped: 0  Warnings: 0
+Adding secondary keys for table child
 Adding constraints for table child
 Executing SQL script vardir/tmp/dump/db2/offices.sql
 Loading data from SERVER file: vardir/tmp/dump/db2/offices.txt into offices
