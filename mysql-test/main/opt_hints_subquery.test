@@ -1,0 +1,99 @@
+CREATE TABLE t1 (a INTEGER NOT NULL, b INT, PRIMARY KEY (a));
+CREATE TABLE t2 (a INTEGER NOT NULL, KEY (a));
+CREATE TABLE t3 (a INTEGER NOT NULL, b INT, KEY (a));
+INSERT INTO t1 VALUES (1,10), (2,20), (3,30),  (4,40);
+INSERT INTO t2 VALUES (2), (3), (4), (5);
+INSERT INTO t3 VALUES (10,3), (20,4), (30,5);
+
+ANALYZE TABLE t1, t2, t3;
+
+--echo # WIP:
+
+
+--echo # Parser tests
+--echo # Correct hints (no warnings):
+EXPLAIN EXTENDED
+  SELECT /*+ SEMIJOIN() */ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ QB_NAME(qb1) SEMIJOIN(@qb1) */ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ QB_NAME(qb1) NO_SEMIJOIN(@qb1 firstmatch) */ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ QB_NAME(qb1) SEMIJOIN(  @qb1 firstmatch,  dupsweedout ) */ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ NO_SEMIJOIN(  FIRSTMATCH, LOOSESCAN,materialization, DUPSWEEDOUT  ) */ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ QB_NAME(qb2) NO_SEMIJOIN(@qb2 FIRSTMATCH,LOOSESCAN, materialization, DUPSWEEDOUT) */ a FROM t1;
+
+set optimizer_switch='derived_merge=off';
+--echo # Correct 'cause hints refer to different query blocks:
+EXPLAIN EXTENDED
+  SELECT /*+ SEMIJOIN(@qb1) SEMIJOIN(loosescan)*/ a
+  FROM (SELECT /*+ QB_NAME(qb1)*/ * FROM t2) AS tt;
+EXPLAIN EXTENDED
+  SELECT /*+ SEMIJOIN()*/ a
+  FROM (SELECT /*+ SEMIJOIN(loosescan)*/ * FROM t2) AS tt;
+
+EXPLAIN EXTENDED
+  SELECT /*+ SUBQUERY(materialization) */ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ SUBQUERY( INTOEXISTS ) */ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ QB_NAME (qb1) SUBQUERY(@qb1   materialization) */ a FROM t1;
+
+--echo # Incorrect hints (warnings)
+SELECT /*+ SEMIJOIN(loosescan @qb1) */ a FROM t1;
+SELECT /*+ SEMIJOIN(@qb1 @qb2) */ a FROM t1;
+SELECT /*+ SEMIJOIN(@qb1 LOOSESCAN,materialization, unknown_strategy) */ a FROM t1;
+SELECT /*+ NO_SEMIJOIN(@qb1, @qb2) */ a FROM t1;
+SELECT /*+ NO_SEMIJOIN(FIRSTMATCH, ,LOOSESCAN, materialization) */ a FROM t1;
+SELECT /*+ NO_SEMIJOIN(FIRSTMATCH, @qb2,LOOSESCAN) */ a FROM t1;
+SELECT /*+ SUBQUERY(wrong_strat) */ a FROM t1;
+SELECT /*+ SUBQUERY(materialization, intoexists) */ a FROM t1;
+SELECT /*+ SUBQUERY(@qb1   materialization) */ a FROM t1;
+SELECT /*+ SUBQUERY() */ a FROM t1;
+
+--echo # Mix of correct and incorrect hints:
+EXPLAIN EXTENDED
+  SELECT /*+ SEMIJOIN(firstmatch ) SEMIJOIN(loosescan @qb1) */ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ NO_SEMIJOIN(@qb1, @qb2) SEMIJOIN()*/ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ NO_SEMIJOIN() NO_SEMIJOIN(FIRSTMATCH, @qb2,LOOSESCAN) */ a FROM t1;
+
+--echo # Conflicting hints:
+EXPLAIN EXTENDED
+  SELECT /*+ SEMIJOIN() SEMIJOIN(dupsweedout) NO_SEMIJOIN(firstmatch)*/ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ SEMIJOIN(loosescan,materialization) SEMIJOIN(dupsweedout)*/ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ NO_SEMIJOIN(firstmatch,loosescan,materialization) SEMIJOIN() NO_SEMIJOIN()*/ a
+  FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ QB_NAME(qb1) SEMIJOIN(@qb1) SEMIJOIN(loosescan) NO_SEMIJOIN(@qb1 dupsweedout)*/ a
+  FROM t1;
+EXPLAIN EXTENDED SELECT /*+ SEMIJOIN(firstmatch) NO_SEMIJOIN()*/ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ SUBQUERY(materialization) SUBQUERY(intoexists)*/ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ SEMIJOIN() SUBQUERY(materialization) SUBQUERY(intoexists)*/ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ SUBQUERY(materialization) SUBQUERY(intoexists)*/ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ SUBQUERY(materialization) SUBQUERY(intoexists) SUBQUERY(materialization)*/ a
+  FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ SUBQUERY(materialization) SEMIJOIN(firstmatch) SUBQUERY(intoexists)*/ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ QB_NAME(qb1) SEMIJOIN(@qb1) SUBQUERY(@qb1 materialization) SUBQUERY(intoexists)*/ a FROM t1;
+EXPLAIN EXTENDED
+  SELECT /*+ QB_NAME(qb1) SUBQUERY(@qb1 materialization) SEMIJOIN(@qb1 firstmatch) SUBQUERY(intoexists)*/ a FROM t1;
+
+set optimizer_switch='derived_merge=off';
+EXPLAIN EXTENDED
+  SELECT /*+ SEMIJOIN(@qb1) SEMIJOIN(loosescan) NO_SEMIJOIN(@qb1 dupsweedout)*/ a
+  FROM (SELECT /*+ QB_NAME(qb1)*/ * FROM t2) AS tt;
+
+
+
+DROP TABLE t1,t2,t3;
