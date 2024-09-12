@@ -390,12 +390,15 @@ public:
     GOT_OOM
   };
 
+  /** Whether to store parsed log records */
+  enum store{NO,BACKUP,YES};
+
 private:
   /** Parse and register one log_t::FORMAT_10_8 mini-transaction.
-  @tparam store     whether to store the records
+  @tparam storing   whether to store the records
   @param  l         log data source
   @param  if_exists if store: whether to check if the tablespace exists */
-  template<typename source,bool store>
+  template<typename source,store storing>
   inline parse_mtr_result parse(source &l, bool if_exists) noexcept;
 
   /** Rewind a mini-transaction when parse() runs out of memory.
@@ -409,21 +412,21 @@ private:
 public:
   /** Parse and register one log_t::FORMAT_10_8 mini-transaction,
   handling log_sys.is_pmem() buffer wrap-around.
-  @tparam store     whether to store the records
-  @param  if_exists if store: whether to check if the tablespace exists */
-  template<bool store>
+  @tparam storing   whether to store the records
+  @param  if_exists storing=YES: whether to check if the tablespace exists */
+  template<store storing>
   static parse_mtr_result parse_mtr(bool if_exists) noexcept;
 
   /** Parse and register one log_t::FORMAT_10_8 mini-transaction,
   handling log_sys.is_pmem() buffer wrap-around.
-  @tparam store     whether to store the records
-  @param  if_exists if store: whether to check if the tablespace exists */
-  template<bool store>
+  @tparam storing   whether to store the records
+  @param  if_exists storing=YES: whether to check if the tablespace exists */
+  template<store storing>
   static parse_mtr_result parse_pmem(bool if_exists) noexcept
 #ifdef HAVE_PMEM
     ;
 #else
-  { return parse_mtr<store>(if_exists); }
+  { return parse_mtr<storing>(if_exists); }
 #endif
 
   /** Erase log records for a page. */
