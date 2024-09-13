@@ -1315,7 +1315,7 @@ int mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables,
   TABLE_LIST *table;
   char path[FN_REFLEN + 1];
   LEX_CSTRING alias= null_clex_str;
-  LEX_CUSTRING version;
+  LEX_CUSTRING version{};
   LEX_CSTRING partition_engine_name= null_clex_str;
   StringBuffer<160> unknown_tables(system_charset_info);
   DDL_LOG_STATE local_ddl_log_state;
@@ -1405,7 +1405,7 @@ int mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables,
     Table_type table_type;
     size_t path_length= 0;
     char *path_end= 0;
-    uint drop_index_from, drop_index_to=0;
+    uint drop_index_from=0, drop_index_to=0;
 
     error= 0;
 
