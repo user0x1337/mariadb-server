@@ -347,7 +347,7 @@ class MHNSW_Context : public Sql_alloc
   */
   static void generate_random_orthogonal_matrix(Map<MatrixXf> &Q)
   {
-    std::mt19937 rnd(Q.rows());
+    std::mt19937 rnd((unsigned int)Q.rows());
     std::normal_distribution<float> gauss(0, 1);
     MatrixXf A(MatrixXf::NullaryExpr(Q.rows(), Q.rows(), [&](){ return gauss(rnd); }));
     HouseholderQR<MatrixXf> qr(A);
