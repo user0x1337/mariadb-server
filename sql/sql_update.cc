@@ -1068,7 +1068,8 @@ error:
 
       if (table->triggers &&
           unlikely(table->triggers->process_triggers(thd, TRG_EVENT_UPDATE,
-                                                     TRG_ACTION_AFTER, TRUE)))
+                                                     TRG_ACTION_AFTER, true,
+                                                     fields)))
       {
         error= 1;
         thd->bulk_param= save_bulk_param;
@@ -2392,7 +2393,8 @@ int multi_update::send_data(List<Item> &not_used_values)
       }
       if (table->triggers &&
           unlikely(table->triggers->process_triggers(thd, TRG_EVENT_UPDATE,
-                                                     TRG_ACTION_AFTER, TRUE)))
+                                                     TRG_ACTION_AFTER, true,
+                                                     fields_for_table[offset])))
         DBUG_RETURN(1);
     }
     else
@@ -2652,7 +2654,8 @@ int multi_update::do_updates()
         goto err2;
       if (table->triggers &&
           table->triggers->process_triggers(thd, TRG_EVENT_UPDATE,
-                                            TRG_ACTION_BEFORE, TRUE))
+                                            TRG_ACTION_BEFORE, true,
+                                            fields_for_table[offset]))
         goto err2;
 
       if (!can_compare_record || compare_record(table))
@@ -2712,7 +2715,8 @@ int multi_update::do_updates()
 
       if (table->triggers &&
           unlikely(table->triggers->process_triggers(thd, TRG_EVENT_UPDATE,
-                                                     TRG_ACTION_AFTER, TRUE)))
+                                                     TRG_ACTION_AFTER, true,
+                                                     fields_for_table[offset])))
         goto err2;
     }
 
