@@ -501,7 +501,7 @@ my_strnxfrm_ret_t my_strnxfrm_mb_internal(CHARSET_INFO *cs,
     else
     {
       /* Multi-byte character */
-      size_t len= (dst + chlen <= de) ? chlen : de - dst;
+      size_t len= (dst + chlen <= de) ? (size_t) chlen : (size_t) (de - dst);
       if (dst + chlen > de)
         warnings|= MY_STRNXFRM_TRUNCATED_WEIGHT_REAL_CHAR;
       memcpy(dst, src, len);
