@@ -221,6 +221,14 @@ protected:
     if (field->type() == Item::FIELD_ITEM && !field->const_item() &&
         (!value || !value->is_expensive()))
       DBUG_RETURN(get_full_func_mm_tree(param, (Item_field *) field, value));
+    if ((field->type() == Item::FUNC_ITEM &&
+         !strcmp(((Item_func *) field)->func_name(), "substr") &&
+          ((Item_func *) field)->arguments()[1]->val_int() == 1) &&
+        !field->const_item() && (!value || !value->is_expensive()))
+      DBUG_RETURN(get_full_func_mm_tree(
+                    param,
+                    (Item_field *) ((Item_func *) field)->arguments()[0],
+                    value));
     DBUG_RETURN(NULL);
   }
   SEL_TREE *get_mm_parts(RANGE_OPT_PARAM *param, Field *field,
