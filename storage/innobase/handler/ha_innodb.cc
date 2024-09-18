@@ -1583,7 +1583,7 @@ innobase_start_trx_and_assign_read_view(
 @return false */
 static bool innobase_flush_logs(handlerton*)
 {
-  if (!srv_read_only_mode && srv_flush_log_at_trx_commit)
+  if (!srv_read_only_mode)
     /* Write any outstanding redo log. Durably if
     innodb_flush_log_at_trx_commit=1. */
     log_buffer_flush_to_disk(srv_flush_log_at_trx_commit == 1);
