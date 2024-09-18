@@ -1061,6 +1061,7 @@ typedef struct system_status_var
   volatile int64 local_memory_used;
   /* Memory allocated for global usage */
   volatile int64 global_memory_used;
+  volatile int64 max_global_memory_used;
 } STATUS_VAR;
 
 /*
@@ -1113,6 +1114,9 @@ static inline void update_global_memory_status(int64 size)
   // workaround for gcc 4.2.4-1ubuntu4 -fPIE (from DEB_BUILD_HARDENING=1)
   int64 volatile * volatile ptr= &global_status_var.global_memory_used;
   my_atomic_add64_explicit(ptr, size, MY_MEMORY_ORDER_RELAXED);
+  // This is slightly approximate, as we are not using atomic set_if_bigger().
+  set_if_bigger(global_status_var.max_global_memory_used,
+                global_status_var.global_memory_used);
 }
 
 

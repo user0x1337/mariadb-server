@@ -3784,6 +3784,8 @@ static void my_malloc_size_cb_func(long long size, my_bool is_thread_specific)
     DBUG_PRINT("info", ("global thd memory_used: %lld  size: %lld",
                         (longlong) thd->status_var.global_memory_used, size));
     thd->status_var.global_memory_used+= size;
+    set_if_bigger(thd->status_var.max_global_memory_used,
+                  thd->status_var.global_memory_used);
   }
   else
     update_global_memory_status(size);
@@ -3852,6 +3854,7 @@ static int init_early_variables()
   set_current_thd(0);
   set_malloc_size_cb(my_malloc_size_cb_func);
   global_status_var.global_memory_used= 0;
+  global_status_var.max_global_memory_used= 0;
   init_alloc_root(PSI_NOT_INSTRUMENTED, &startup_root, 1024, 0, MYF(0));
   init_alloc_root(PSI_NOT_INSTRUMENTED, &read_only_root, 1024, 0,
 		  MYF(MY_ROOT_USE_MPROTECT));

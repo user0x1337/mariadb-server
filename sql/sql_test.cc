@@ -626,7 +626,7 @@ Open streams:  %10lu\n",
   MEM_MAKE_DEFINED(&info, sizeof info);
 #endif
 #if defined(HAVE_MALLINFO) || defined(HAVE_MALLINFO2)
-  char llbuff[10][22];
+  char llbuff[11][22];
   printf("\nMemory status:\n\
 Non-mmapped space allocated from system: %s\n\
 Number of free chunks:                   %lu\n\
@@ -640,6 +640,7 @@ Total free space:                        %s\n\
 Top-most, releasable space:              %s\n\
 Estimated memory (with thread stack):    %s\n\
 Global memory allocated by server:       %s\n\
+Peak global memory allocated by server:  %s\n\
 Memory allocated by threads:             %s\n",
 	 llstr(info.arena,   llbuff[0]),
 	 (ulong) info.ordblks,
@@ -654,7 +655,8 @@ Memory allocated by threads:             %s\n",
          llstr((count + thread_cache.size()) * my_thread_stack_size +
                info.hblkhd + info.arena, llbuff[7]),
          llstr(tmp.global_memory_used, llbuff[8]),
-         llstr(tmp.local_memory_used, llbuff[9]));
+         llstr(tmp.max_global_memory_used, llbuff[9]),
+         llstr(tmp.local_memory_used, llbuff[10]));
 
 #elif defined(HAVE_MALLOC_ZONE)
   malloc_statistics_t info;
@@ -665,11 +667,13 @@ Memory allocated by threads:             %s\n",
 Total allocated space:                   %s\n\
 Total free space:                        %s\n\
 Global memory allocated by server:       %s\n\
+Peak global memory allocated by server:  %s\n\
 Memory allocated by threads:             %s\n",
          llstr(info.size_allocated, llbuff[0]),
          llstr((info.size_allocated - info.size_in_use), llbuff[1]),
          llstr(tmp.global_memory_used, llbuff[2]),
-         llstr(tmp.local_memory_used, llbuff[3]));
+         llstr(tmp.max_global_memory_used, llbuff[3]),
+         llstr(tmp.local_memory_used, llbuff[4]));
 #endif
 
 #ifdef HAVE_EVENT_SCHEDULER

@@ -795,6 +795,7 @@ THD::THD(my_thread_id id, bool is_wsrep_applier)
   status_var.local_memory_used= sizeof(THD);
   status_var.max_local_memory_used= status_var.local_memory_used;
   status_var.global_memory_used= 0;
+  status_var.max_global_memory_used= 0;
   variables.pseudo_thread_id= thread_id;
   variables.max_mem_used= global_system_variables.max_mem_used;
   main_da.init();
@@ -1921,7 +1922,10 @@ void add_to_status(STATUS_VAR *to_var, STATUS_VAR *from_var)
     update_global_memory_status(from_var->global_memory_used);
   }
   else
+  {
    to_var->global_memory_used+= from_var->global_memory_used;
+   set_if_bigger(to_var->max_global_memory_used, to_var->global_memory_used);
+  }
 }
 
 /*
