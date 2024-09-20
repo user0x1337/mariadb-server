@@ -5223,10 +5223,11 @@ extern "C" MYSQL_THD thd_increment_pending_ops(MYSQL_THD thd)
   end of async operation (such as end of group commit
   write flush)
 
-  @param thd THD
+  @param t THD
 */
-extern "C" void thd_decrement_pending_ops(MYSQL_THD thd)
+extern "C" void thd_decrement_pending_ops(void *t)
 {
+  THD *thd= static_cast<THD*>(t);
   DBUG_ASSERT(thd);
   DBUG_ASSERT(thd->system_thread == NON_SYSTEM_THREAD);
 
