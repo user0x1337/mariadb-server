@@ -6970,3 +6970,20 @@ DROP VIEW v1;
 DROP VIEW v2;
 DROP TABLE t;
 # End of 10.4 tests
+#
+# MDEV-29537: Creation of view with UNION and SELECT ... FOR UPDATE
+# in definition is failed with error
+#
+CREATE TABLE t1 (i INT);
+create view v1 as SELECT 1 FROM t1
+UNION
+SELECT 1 FROM DUAL WHERE 1 GROUP BY 1 HAVING 1 ORDER BY 1
+FOR UPDATE;
+select * from v1;
+1
+1
+drop view v1;
+drop table t1;
+#
+# End of 10.5 tests
+#

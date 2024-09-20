@@ -3788,6 +3788,8 @@ void st_select_lex_unit::print(String *str, enum_query_type query_type)
   }
   else if (saved_fake_select_lex)
     saved_fake_select_lex->print_limit(thd, str, query_type);
+
+  print_lock_from_the_last_select(str);
 }
 
 
@@ -10611,6 +10613,25 @@ bool SELECT_LEX_UNIT::set_lock_to_the_last_select(Lex_select_lock l)
   }
   return FALSE;
 }
+
+
+void SELECT_LEX_UNIT::print_lock_from_the_last_select(String *str)
+{
+  SELECT_LEX *sel= first_select();
+  while (sel->next_select())
+    sel= sel->next_select();
+  if(sel->braces)
+    return; // impossible in the braces see set_lock_to_the_last_select
+
+  // lock type
+  if (sel->lock_type == TL_READ_WITH_SHARED_LOCKS)
+    str->append(" lock in share mode");
+  else if (sel->lock_type == TL_WRITE)
+    str->append(" for update");
+
+  return;
+}
+
 
 /**
   Generate unique name for generated derived table for this SELECT

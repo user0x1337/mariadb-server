@@ -1042,6 +1042,7 @@ public:
   bool check_parameters(SELECT_LEX *main_select);
 
   bool set_lock_to_the_last_select(Lex_select_lock l);
+  void print_lock_from_the_last_select(String *str);
 
   bool can_be_merged();
 
