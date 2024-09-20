@@ -5344,6 +5344,20 @@ static void test_lc_time_sz()
 #endif//DBUG_OFF
 
 
+/*
+  Call this only from mysqld_main/win_main to ensure that select_thread_in_use
+  is cleared.  This allows the process to quit prematurely when
+  break_connect_loop() is called from signal_hand(), which will happen when
+  processing the SIGTERM signal sent by wait_for_signal_thread_to_end()
+  during unireg_abort().
+*/
+static void unireg_abort_from_main(int exit_code)
+{
+  select_thread_in_use= 0;
+  unireg_abort(exit_code);
+}
+
+
 #ifdef __WIN__
 int win_main(int argc, char **argv)
 #else
@@ -5524,7 +5538,7 @@ int mysqld_main(int argc, char **argv)
 #endif
 
   if (init_common_variables())
-    unireg_abort(1);				// Will do exit
+    unireg_abort_from_main(1);				// Will do exit
 
   init_signals();
 
@@ -5558,7 +5572,7 @@ int mysqld_main(int argc, char **argv)
   */
   check_data_home(mysql_real_data_home);
   if (my_setwd(mysql_real_data_home, opt_abort ? 0 : MYF(MY_WME)) && !opt_abort)
-    unireg_abort(1);				/* purecov: inspected */
+    unireg_abort_from_main(1);	/* purecov: inspected */
 
   /* Atomic write initialization must be done as root */
   my_init_atomic_write();
@@ -5575,7 +5589,7 @@ int mysqld_main(int argc, char **argv)
 
 #ifdef WITH_WSREP
   wsrep_set_wsrep_on();
-  if (WSREP_ON && wsrep_check_opts()) unireg_abort(1);
+  if (WSREP_ON && wsrep_check_opts()) unireg_abort_from_main(1);
 #endif
 
   /* 
@@ -5587,7 +5601,7 @@ int mysqld_main(int argc, char **argv)
 #endif
 
   if (init_server_components())
-    unireg_abort(1);
+    unireg_abort_from_main(1);
 
   init_ssl();
   network_init();
@@ -5596,24 +5610,20 @@ int mysqld_main(int argc, char **argv)
   // Recover and exit.
   if (wsrep_recovery)
   {
-    select_thread_in_use= 0;
     if (WSREP_ON)
       wsrep_recover();
     else
       sql_print_information("WSREP: disabled, skipping position recovery");
-    unireg_abort(0);
+    unireg_abort_from_main(0);
   }
 #endif
 
-  /*
-    init signals & alarm
-    After this we can't quit by a simple unireg_abort
-  */
+
   start_signal_handler();				// Creates pidfile
 
   if (mysql_rm_tmp_tables() || acl_init(opt_noacl) ||
       my_tz_init((THD *)0, default_tz_name, opt_bootstrap))
-    unireg_abort(1);
+    unireg_abort_from_main(1);
 
   if (!opt_noacl)
     (void) grant_init();
@@ -5642,7 +5652,7 @@ int mysqld_main(int argc, char **argv)
 
   Events::set_original_state(Events::opt_event_scheduler);
   if (Events::init((THD*) 0, opt_noacl || opt_bootstrap))
-    unireg_abort(1);
+    unireg_abort_from_main(1);
 
 #ifdef WITH_WSREP
   if (WSREP_ON)
@@ -5671,10 +5681,9 @@ int mysqld_main(int argc, char **argv)
 
   if (opt_bootstrap)
   {
-    select_thread_in_use= 0;                    // Allow 'kill' to work
     int bootstrap_error= bootstrap(mysql_stdin);
     if (!abort_loop)
-      unireg_abort(bootstrap_error);
+      unireg_abort_from_main(bootstrap_error);
     else
     {
       sleep(2);                                 // Wait for kill
@@ -5695,13 +5704,13 @@ int mysqld_main(int argc, char **argv)
   */
   if (init_slave() && !active_mi)
   {
-    unireg_abort(1);
+    unireg_abort_from_main(1);
   }
 
   if (opt_init_file && *opt_init_file)
   {
     if (read_init_file(opt_init_file))
-      unireg_abort(1);
+      unireg_abort_from_main(1);
   }
 
   disable_log_notes= 0; /* Startup done, now we can give notes again */
