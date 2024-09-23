@@ -38,7 +38,7 @@ insert t1 (v) values (x'e360d63ebe554f3fcdbc523f4522193f5236083d'),
                      (x'7b713f3e5258323f80d1113d673b2b3f66e3583f'),
                      (x'6ca1d43e9df91b3fe580da3e1c247d3f147cf33e');
 
-select id, hex(v) from t1;
+select id, hex(v), vec_totext(v) from t1;
 flush tables;
 # test with a valid query vector
 --replace_regex /(\.\d{5})\d+/\1/
