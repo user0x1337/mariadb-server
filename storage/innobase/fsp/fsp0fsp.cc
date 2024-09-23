@@ -37,12 +37,16 @@ Created 11/29/1995 Heikki Tuuri
 #include "btr0sea.h"
 #include "dict0boot.h"
 #include "log0log.h"
+#include "dict0load.h"
 #include "dict0mem.h"
-#include "fsp0types.h"
+#include "btr0pcur.h"
+#include "trx0sys.h"
 #include "log.h"
 #ifndef DBUG_OFF
 # include "trx0purge.h"
 #endif
+#include <unordered_set>
+#include "trx0undo.h"
 
 /** Returns the first extent descriptor for a segment.
 We think of the extent lists of the segment catenated in the order
@@ -3196,6 +3200,68 @@ public:
   }
 };
 
+/** Used during freeing of unused segment in system tablespace.
+Stores the "to be modified" header, inode pages, extent descriptor
+page and its old page state */
+struct fsp_old_inode
+{
+  std::map<uint32_t, buf_block_t*> m_old_inode_entry;
+public:
+  dberr_t insert(uint32_t page_no, mtr_t *mtr)
+  {
+    if (m_old_inode_entry[page_no])
+      return DB_SUCCESS;
+    dberr_t err= DB_SUCCESS;
+    buf_block_t *block=
+      buf_page_get_gen(page_id_t{0, page_no}, 0, RW_SX_LATCH,
+                       nullptr, BUF_GET, mtr, &err);
+    if (!block)
+      return err;
+    buf_block_t *old= buf_LRU_get_free_block(have_no_mutex_soft);
+    if (!old) return DB_OUT_OF_MEMORY;
+
+    memcpy_aligned<UNIV_PAGE_SIZE_MIN>(
+      old->page.frame, block->page.frame, srv_page_size);
+    m_old_inode_entry[page_no]= old;
+    return err;
+  }
+
+  void insert_descr(xdes_t *descr, mtr_t *mtr)
+  {
+    uint32_t descr_page_no= page_get_page_no(page_align(descr));
+    insert(descr_page_no, mtr);
+
+    fil_addr_t prev_addr= flst_get_prev_addr(descr + XDES_FLST_NODE);
+    if (prev_addr.page != FIL_NULL)
+      insert(prev_addr.page, mtr);
+
+    fil_addr_t next_addr= flst_get_next_addr(descr + XDES_FLST_NODE);
+    if (next_addr.page != FIL_NULL)
+      insert(next_addr.page, mtr);
+  }
+
+  void restore(mtr_t *mtr)
+  {
+    for (auto it : m_old_inode_entry)
+    {
+      buf_block_t *block= mtr->get_already_latched(
+        page_id_t{0, it.first}, MTR_MEMO_PAGE_SX_FIX);
+      if (!block) continue;
+      memcpy_aligned<UNIV_PAGE_SIZE_MIN>(block->page.frame,
+                                         m_old_inode_entry[it.first]
+                                           ->page.frame,
+                                         srv_page_size);
+    }
+  }
+
+  fsp_old_inode()=default;
+  ~fsp_old_inode()
+  {
+    for (auto it : m_old_inode_entry)
+        buf_block_free(it.second);
+  }
+};
+
 /** Update the current descriptor entry with last valid
 descriptor entry with skipped descriptor pages
 @param header          File segment header
@@ -3577,23 +3643,408 @@ dberr_t fsp_sys_tablespace_validate()
 }
 #endif /* UNIV_DEBUG */
 
-void fsp_system_tablespace_truncate()
+/** Store the inode information which basically stores
+the page and offset */
+struct inode_info : private std::unordered_set<uint64_t>
+{
+public:
+  __attribute__((warn_unused_result))
+  /** Register an inode */
+  bool insert_seg(const byte *inode)
+  {
+    uint32_t page= mach_read_from_4(inode + 4);
+    uint16_t offset= mach_read_from_2(inode + 8);
+    return page < fil_system.sys_space->free_limit &&
+      offset >= FIL_PAGE_DATA && offset < srv_page_size - FIL_PAGE_DATA_END &&
+      emplace(uint64_t{page} << 16 | offset).second;
+  }
+
+  __attribute__((warn_unused_result))
+  bool find(uint32_t page, uint16_t offset) const
+  { return std::unordered_set<uint64_t>::find(uint64_t{page} << 16 | offset) != end(); }
+};
+
+/** Get the file segments from root page
+@param inodes store the index nodes information
+@param root   root page
+@return error code */
+static dberr_t fsp_table_inodes_root(inode_info *inodes, uint32_t root)
+{
+  if (root == FIL_NULL)
+    return DB_SUCCESS;
+
+  dberr_t err= DB_SUCCESS;
+  buf_block_t *block= buf_pool.page_fix(page_id_t{0, root}, &err,
+                                        buf_pool_t::FIX_WAIT_READ);
+  if (!block)
+    return err;
+
+  if (!inodes->insert_seg(block->page.frame + PAGE_HEADER + PAGE_BTR_SEG_TOP))
+    err= DB_CORRUPTION;
+
+  if (!inodes->insert_seg(block->page.frame + PAGE_HEADER + PAGE_BTR_SEG_LEAF))
+    err= DB_CORRUPTION;
+
+  block->page.unfix();
+  return err;
+}
+
+/** Add the file segment of all root pages in table
+@param inodes store the index nodes information
+@param table  table to be read
+@return error code */
+static dberr_t add_index_root_pages(inode_info *inodes, dict_table_t *table)
+{
+  dberr_t err= DB_SUCCESS;
+  for (auto i= UT_LIST_GET_FIRST(table->indexes);
+       i != nullptr && err == DB_SUCCESS; i= UT_LIST_GET_NEXT(indexes, i))
+    err= fsp_table_inodes_root(inodes, i->page);
+  return err;
+}
+
+/** Determine the inodes used by tables in the system tablespace.
+@param inodes store the index nodes information
+@param mtr    mini-transaction
+@return error code */
+static dberr_t fsp_table_inodes(inode_info *inodes, mtr_t *mtr)
+{
+  btr_pcur_t pcur;
+  ulint len;
+  const auto savepoint= mtr->get_savepoint();
+  dberr_t err= DB_SUCCESS;
+  dict_sys.freeze(SRW_LOCK_CALL);
+  for (const rec_t *rec= dict_startscan_system(&pcur, mtr,
+                                               dict_sys.sys_indexes);
+       rec; rec= dict_getnext_system_low(&pcur, mtr))
+  {
+    const byte *field=
+      rec_get_nth_field_old(rec, DICT_FLD__SYS_INDEXES__SPACE, &len);
+    if (len != 4)
+    {
+      err= DB_CORRUPTION;
+      break;
+    }
+    uint32_t space= mach_read_from_4(field);
+    if (space > 0) continue;
+
+    field= rec_get_nth_field_old(rec, DICT_FLD__SYS_INDEXES__PAGE_NO, &len);
+    if (len != 4)
+    {
+      err= DB_CORRUPTION;
+      break;
+    }
+    err= fsp_table_inodes_root(inodes, mach_read_from_4(field));
+    if (err)
+      break;
+  }
+  mtr->rollback_to_savepoint(savepoint);
+  dict_sys.unfreeze();
+
+  if (err == DB_SUCCESS)
+  {
+    err= add_index_root_pages(inodes, dict_sys.sys_tables);
+    if (err) return err;
+    err= add_index_root_pages(inodes, dict_sys.sys_indexes);
+    if (err) return err;
+    err= add_index_root_pages(inodes, dict_sys.sys_columns);
+    if (err) return err;
+    err= add_index_root_pages(inodes, dict_sys.sys_fields);
+  }
+  return err;
+}
+
+/* Get the used inode from the system tablespace
+@param inodes inode information used found in system tablespace
+@param mtr    mini-transaction
+@return error code */
+static dberr_t fsp_get_sys_used_segment(inode_info *inodes, mtr_t *mtr)
+{
+  dberr_t err= DB_SUCCESS;
+  buf_block_t *block= nullptr;
+  /* Get TRX_SYS_FSEG_HEADER, TRX_SYS_DOUBLEWRITE_FSEG from
+  TRX_SYS_PAGE */
+  block= buf_pool.page_fix(page_id_t{0, TRX_SYS_PAGE_NO}, &err,
+                           buf_pool_t::FIX_WAIT_READ);
+  if (!block)
+    return err;
+
+  if (!inodes->insert_seg(block->page.frame + TRX_SYS + TRX_SYS_FSEG_HEADER))
+    err= DB_CORRUPTION;
+
+  if (!inodes->insert_seg(block->page.frame + TRX_SYS_DOUBLEWRITE
+                          + TRX_SYS_DOUBLEWRITE_FSEG))
+    err= DB_CORRUPTION;
+
+  block->page.unfix();
+
+  if (err)
+    return err;
+
+  block= buf_pool.page_fix(page_id_t{0, DICT_HDR_PAGE_NO}, &err,
+                           buf_pool_t::FIX_WAIT_READ);
+  if (!block)
+    return err;
+
+  if (!inodes->insert_seg(block->page.frame + DICT_HDR + DICT_HDR_FSEG_HEADER))
+    err= DB_CORRUPTION;
+
+  block->page.unfix();
+
+  if (err)
+    return err;
+
+  block= buf_pool.page_fix(page_id_t{0, FSP_IBUF_HEADER_PAGE_NO},
+                           &err, buf_pool_t::FIX_WAIT_READ);
+  if (!block)
+    return err;
+  if (!inodes->insert_seg(block->page.frame + PAGE_DATA))
+    err= DB_CORRUPTION;
+
+  block->page.unfix();
+
+  /* Get rollback segment header page */
+  for (ulint rseg_id= 0; rseg_id < TRX_SYS_N_RSEGS && err == DB_SUCCESS;
+       rseg_id++)
+  {
+    trx_rseg_t *rseg= &trx_sys.rseg_array[rseg_id];
+    if (rseg->space->id == 0)
+    {
+      block= buf_pool.page_fix(rseg->page_id(), &err,
+                               buf_pool_t::FIX_WAIT_READ);
+      if (!block)
+        continue;
+      if (!inodes->insert_seg(block->page.frame + TRX_RSEG +
+                              TRX_RSEG_FSEG_HEADER))
+        err= DB_CORRUPTION;
+      block->page.unfix();
+
+      /* Even after slow shutdown, there is a possiblity that
+      cached undo log can exist. So store the segment as used one */
+      for (trx_undo_t *undo= UT_LIST_GET_FIRST(rseg->undo_cached);
+           undo && err == DB_SUCCESS;
+           undo= UT_LIST_GET_NEXT(undo_list, undo))
+      {
+        block= buf_pool.page_fix(page_id_t{0, undo->hdr_page_no}, &err,
+                                 buf_pool_t::FIX_WAIT_READ);
+        if (!block)
+	  continue;
+	if (!inodes->insert_seg(block->page.frame + TRX_UNDO_SEG_HDR +
+                                TRX_UNDO_FSEG_HEADER))
+          err= DB_CORRUPTION;
+        block->page.unfix();
+      }
+    }
+  }
+
+  if (err == DB_SUCCESS)
+    err= fsp_table_inodes(inodes, mtr);
+  return err;
+}
+
+/** Free the extents, fragment page from the given inode
+@param space  system tablespace
+@param page_no index node page number
+@param offset  index node offset within page
+@return error code */
+static dberr_t fseg_inode_free(fil_space_t *space, uint32_t page_no,
+                               uint16_t offset)
+{
+  dberr_t err= DB_SUCCESS;
+  fsp_old_inode old_inodes_entry;
+  mtr_t mtr;
+  mtr.start();
+  mtr.x_lock_space(space);
+  sql_print_information("InnoDB: Freeing the unused segment page "
+                        UINT32PF " offset " UINT32PF, page_no,
+                        offset);
+  old_inodes_entry.insert(0, &mtr);
+  old_inodes_entry.insert(page_no, &mtr);
+
+  uint32_t old_free_len= space->free_len;
+  buf_block_t *iblock= mtr.get_already_latched(
+    page_id_t{0, page_no}, MTR_MEMO_PAGE_SX_FIX);
+  if (!iblock)
+  {
+    err= DB_ERROR;
+err_exit:
+    sql_print_warning("InnoDB: Failed to free the unused segment");
+    old_inodes_entry.restore(&mtr);
+    mtr.commit();
+    space->free_len= old_free_len;
+    return err;
+  }
+
+  fseg_inode_t *inode= iblock->page.frame + offset;
+  xdes_t *descr= fseg_get_first_extent(inode, space, &mtr, &err);
+  while (descr && err == DB_SUCCESS)
+  {
+    old_inodes_entry.insert_descr(descr, &mtr);
+    err= fseg_free_extent(inode, iblock, space,
+                          xdes_get_offset(descr), &mtr);
+    DBUG_EXECUTE_IF("unused_undo_free_fail_4",
+                    err= DB_CORRUPTION;);
+    if (err)
+      goto err_exit;
+    descr= fseg_get_first_extent(inode, space, &mtr, &err);
+  }
+
+  if (err)
+    goto err_exit;
+
+  for (uint32_t i= 0; i < FSEG_FRAG_ARR_N_SLOTS; i++)
+  {
+    uint32_t page_no = fseg_get_nth_frag_page_no(inode, i);
+    if (page_no != FIL_NULL)
+    {
+      err= fseg_free_page_low(inode, iblock, space, page_no, &mtr);
+      DBUG_EXECUTE_IF("unused_undo_free_fail_5",
+                      err= DB_CORRUPTION;);
+      if (err)
+        goto err_exit;
+    }
+  }
+
+  /* There is a possiblity that the inode page can move from
+  FSP_SEG_INODES_FULL to FSP_SEG_INODES_FREE and remove it
+  from FSEG_SEG_INODES_FREE. So better to store the prev
+  and next inode pages */
+  const fil_addr_t prev_addr=
+    flst_get_prev_addr(iblock->page.frame + FSEG_INODE_PAGE_NODE);
+  if (prev_addr.page != FIL_NULL)
+    old_inodes_entry.insert(prev_addr.page, &mtr);
+
+  const fil_addr_t next_addr=
+    flst_get_next_addr(iblock->page.frame + FSEG_INODE_PAGE_NODE);
+
+  if (next_addr.page != FIL_NULL)
+    old_inodes_entry.insert(next_addr.page, &mtr);
+
+  fsp_free_seg_inode(space, inode, iblock, &mtr);
+  mtr.commit();
+  return err;
+}
+
+/** Free the unused segment
+@param boffset    offset of the list containing segment header
+@param space      system tablespace
+@param usedInodes Used system tablespace index node
+@return error code */
+static dberr_t fsp_free_unused_seg(fil_space_t *space,
+                                   ulint boffset, inode_info *inodes)
+{
+  dberr_t err= DB_SUCCESS;
+  buf_block_t *block= buf_pool.page_fix(page_id_t{0, 0}, &err,
+                                        buf_pool_t::FIX_WAIT_READ);
+  DBUG_EXECUTE_IF("unused_undo_free_fail_2",
+                  {
+                    block->page.unfix();
+                    err= DB_CORRUPTION;
+                    block= nullptr;
+		  });
+  if (!block)
+    return err;
+  buf_block_t *header= block;
+  const uint32_t len= flst_get_len(block->page.frame + boffset);
+  fil_addr_t addr= flst_get_first(block->page.frame + boffset);
+  for (uint32_t i= len; i-- && err == DB_SUCCESS; )
+  {
+    ut_ad(addr.boffset >= FIL_PAGE_DATA);
+    ut_ad(addr.boffset < block->physical_size() - FIL_PAGE_DATA_END);
+    block= buf_pool.page_fix(page_id_t{0, addr.page}, &err,
+                             buf_pool_t::FIX_WAIT_READ);
+    DBUG_EXECUTE_IF("unused_undo_free_fail_3",
+                    {
+                      block->page.unfix();
+                      err= DB_CORRUPTION;
+                      block= nullptr;
+		    });
+    if (!block)
+    {
+      addr.page= FIL_NULL;
+      continue;
+    }
+
+    fil_addr_t next_addr= flst_get_next_addr(block->page.frame + addr.boffset);
+    for (uint32_t i= 0; i < FSP_SEG_INODES_PER_PAGE(srv_page_size) &&
+         err == DB_SUCCESS; i++)
+    {
+      fseg_inode_t *inode=
+        fsp_seg_inode_page_get_nth_inode(block->page.frame, i);
+      uint16_t offset= uint16_t (inode - block->page.frame);
+      if (mach_read_from_8(FSEG_ID + inode) == 0)
+        continue;
+      if (!inodes->find(addr.page, offset))
+        err= fseg_inode_free(space, addr.page, offset);
+    }
+    addr= next_addr;
+    block->page.unfix();
+  }
+  ut_ad(addr.page == FIL_NULL);
+  header->page.unfix();
+  return err;
+}
+
+/** Remove the unused segment in tablespace. This function
+used only during shrinking of system tablespace
+@param shutdown  Called during shutdown
+@return error code */
+dberr_t fil_space_t::garbage_collect(bool shutdown)
+{
+  if (!shutdown && !trx_sys.is_undo_empty())
+  {
+    sql_print_warning("InnoDB: Can't free the unused segments"
+                      " in system tablespace because a previous shutdown"
+                      " was not with innodb_fast_shutdown=0");
+    return DB_ERROR;
+  }
+
+  ut_a(id == 0);
+  /* Collect all the used segment inode entries */
+  mtr_t mtr;
+  mtr.start();
+  inode_info inodes;
+  dberr_t err= fsp_get_sys_used_segment(&inodes, &mtr);
+  mtr.commit();
+  DBUG_EXECUTE_IF("unused_undo_free_fail_1",
+		  err= DB_CORRUPTION;);
+  if (err)
+    return err;
+
+  err= fsp_free_unused_seg(this,
+                           FSP_HEADER_OFFSET + FSP_SEG_INODES_FULL,
+                           &inodes);
+  if (err)
+    return err;
+  err= fsp_free_unused_seg(this,
+                           FSP_HEADER_OFFSET + FSP_SEG_INODES_FREE,
+                           &inodes);
+  return err;
+}
+
+void fsp_system_tablespace_truncate(bool shutdown)
 {
   ut_ad(!purge_sys.enabled());
   ut_ad(!srv_undo_sources);
   uint32_t last_used_extent= 0;
   fil_space_t *space= fil_system.sys_space;
-  mtr_t mtr;
-  mtr.start();
-  mtr.x_lock_space(space);
-  dberr_t err= fsp_traverse_extents(space, &last_used_extent, &mtr);
-  if (err != DB_SUCCESS)
+  dberr_t err= space->garbage_collect(shutdown);
+  if (err)
   {
 func_exit:
     sql_print_warning("InnoDB: Cannot shrink the system tablespace "
                       "due to %s", ut_strerr(err));
-    mtr.commit();
     return;
+  }
+
+  mtr_t mtr;
+  mtr.start();
+  mtr.x_lock_space(space);
+  err= fsp_traverse_extents(space, &last_used_extent, &mtr);
+  if (err != DB_SUCCESS)
+  {
+err_exit:
+    mtr.commit();
+    goto func_exit;
   }
   uint32_t fixed_size= srv_sys_space.get_min_size(),
            header_size= space->size_in_header;
@@ -3643,7 +4094,7 @@ func_exit:
 
     header= fsp_get_latched_xdes_page(0, &mtr, &err);
     if (!header)
-      goto func_exit;
+      goto err_exit;
 
     mtr.write<4, mtr_t::FORCED>(
       *header, FSP_HEADER_OFFSET + FSP_SIZE + header->page.frame,
@@ -3656,16 +4107,16 @@ func_exit:
     err= fsp_shrink_list(
       header, FSP_HEADER_OFFSET + FSP_FREE, last_used_extent, &mtr);
     if (err != DB_SUCCESS)
-      goto func_exit;
+      goto err_exit;
 
     err= fsp_shrink_list(
       header, FSP_HEADER_OFFSET + FSP_FREE_FRAG, last_used_extent, &mtr);
     if (err != DB_SUCCESS)
-      goto func_exit;
+      goto err_exit;
 
     err= fsp_xdes_reset(space, last_used_extent, &mtr);
     if (err != DB_SUCCESS)
-      goto func_exit;
+      goto err_exit;
 
     mtr.trim_pages(page_id_t(0, last_used_extent));
     size_t shrink_redo_size= mtr.get_log_size();

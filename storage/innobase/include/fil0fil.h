@@ -1009,6 +1009,9 @@ public:
   /** Update the data structures on write completion */
   void complete_write();
 
+  /** Free the unused segment for the tablespace
+  @param shutdown called during shutdown */
+  dberr_t garbage_collect(bool shutdown);
 private:
   /** @return whether the file is usable for io() */
   ATTRIBUTE_COLD bool prepare_acquired();

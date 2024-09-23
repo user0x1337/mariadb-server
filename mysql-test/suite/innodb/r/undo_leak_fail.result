@@ -1,0 +1,93 @@
+call mtr.add_suppression("InnoDB: Can't free the unused segments in system tablespace because a previous shutdown was not with innodb_fast_shutdown=0");
+call mtr.add_suppression("InnoDB: Cannot shrink the system tablespace due to Generic error");
+call mtr.add_suppression("InnoDB: Cannot shrink the system tablespace due to Data structure corruption");
+call mtr.add_suppression("InnoDB: Failed to free the unused segment");
+# restart: --debug_dbug=d,undo_segment_leak
+SET GLOBAL INNODB_FILE_PER_TABLE=0;
+Warnings:
+Warning	1287	'@@innodb_file_per_table' is deprecated and will be removed in a future release
+CREATE TABLE t1(f1 INT NOT NULL, f2 INT NOT NULL)ENGINE=InnoDB;
+INSERT INTO t1 SELECT seq, seq FROM seq_1_to_4096;
+INSERT INTO t1 SELECT seq, seq FROM seq_1_to_4096;
+INSERT INTO t1 SELECT seq, seq FROM seq_1_to_4096;
+INSERT INTO t1 SELECT seq, seq FROM seq_1_to_4096;
+INSERT INTO t1 SELECT seq, seq FROM seq_1_to_4096;
+INSERT INTO t1 SELECT seq, seq FROM seq_1_to_4096;
+UPDATE t1 SET f1 = f1 + 1 WHERE f1 > 1000;
+UPDATE t1 SET f2 = f2 + 1 WHERE f1 > 1000;
+UPDATE t1 SET f1 = f2 + 1 WHERE f1 > 1000;
+UPDATE t1 SET f2 = f1 + 1 WHERE f1 > 1000;
+DELETE FROM t1;
+DROP TABLE t1;
+SELECT NAME, FILE_SIZE FROM information_schema.innodb_sys_tablespaces WHERE SPACE = 0;
+NAME	FILE_SIZE
+innodb_system	77594624
+# restart: --debug_dbug=d,unused_undo_free_fail_1
+SET GLOBAL innodb_file_per_table=0;
+Warnings:
+Warning	1287	'@@innodb_file_per_table' is deprecated and will be removed in a future release
+SELECT NAME FROM information_schema.innodb_sys_tables WHERE SPACE = 0;
+NAME
+SYS_FOREIGN
+SYS_FOREIGN_COLS
+SYS_VIRTUAL
+CREATE TABLE t1(f1 INT NOT NULL)ENGINE=InnoDB;
+set global innodb_fast_shutdown=0;
+# restart: --debug_dbug=d,unused_undo_free_fail_2
+SET GLOBAL innodb_file_per_table=0;
+Warnings:
+Warning	1287	'@@innodb_file_per_table' is deprecated and will be removed in a future release
+SELECT NAME FROM information_schema.innodb_sys_tables WHERE SPACE = 0;
+NAME
+SYS_FOREIGN
+SYS_FOREIGN_COLS
+SYS_VIRTUAL
+test/t1
+CREATE TABLE t2(f1 INT NOT NULL)ENGINE=InnoDB;
+set global innodb_fast_shutdown=0;
+# restart: --debug_dbug=d,unused_undo_free_fail_3
+SET GLOBAL innodb_file_per_table=0;
+Warnings:
+Warning	1287	'@@innodb_file_per_table' is deprecated and will be removed in a future release
+SELECT NAME FROM information_schema.innodb_sys_tables WHERE SPACE = 0;
+NAME
+SYS_FOREIGN
+SYS_FOREIGN_COLS
+SYS_VIRTUAL
+test/t1
+test/t2
+CREATE TABLE t3(f1 INT NOT NULL)ENGINE=InnoDB;
+set global innodb_fast_shutdown=0;
+# restart: --debug_dbug=d,unused_undo_free_fail_4
+SET GLOBAL innodb_file_per_table=0;
+Warnings:
+Warning	1287	'@@innodb_file_per_table' is deprecated and will be removed in a future release
+SELECT NAME FROM information_schema.innodb_sys_tables WHERE SPACE = 0;
+NAME
+SYS_FOREIGN
+SYS_FOREIGN_COLS
+SYS_VIRTUAL
+test/t1
+test/t2
+test/t3
+CREATE TABLE t4(f1 INT NOT NULL)ENGINE=InnoDB;
+set global innodb_fast_shutdown=0;
+# restart: --debug_dbug=d,unused_undo_free_fail_5
+SET GLOBAL innodb_file_per_table=0;
+Warnings:
+Warning	1287	'@@innodb_file_per_table' is deprecated and will be removed in a future release
+SELECT NAME FROM information_schema.innodb_sys_tables WHERE SPACE = 0;
+NAME
+SYS_FOREIGN
+SYS_FOREIGN_COLS
+SYS_VIRTUAL
+test/t1
+test/t2
+test/t3
+test/t4
+DROP TABLE t1, t2, t3, t4;
+set GLOBAL innodb_fast_shutdown=0;
+# restart
+SELECT NAME, FILE_SIZE FROM information_schema.innodb_sys_tablespaces WHERE SPACE = 0;
+NAME	FILE_SIZE
+innodb_system	10485760
