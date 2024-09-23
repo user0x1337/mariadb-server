@@ -88,7 +88,8 @@ String *Item_func_vec_totext::val_str_ascii(String *str)
   const char *ptr= r1->ptr();
   for (size_t i= 0; i < r1->length(); i+= 4)
   {
-    float val= *reinterpret_cast<const float *>(ptr);
+    float val;
+    float4get(val, ptr);
     if (std::isinf(val))
       if (val < 0)
         str->append(STRING_WITH_LEN("-Inf"));
@@ -219,16 +220,43 @@ using namespace Eigen;
 double Item_func_vec_distance_euclidean::
 calc_distance(float *data1, float *data2, size_t d_len)
 {
+#ifdef WORDS_BIGENDIAN
+   double d= 0;
+   for (size_t i= 0; i < d_len; i++, data1++, data2++)
+   {
+     float v1, v2;
+     float4get(v1, data1);
+     float4get(v2, data2);
+     float dist= v1 - v2;
+     d+= dist * dist;
+   }
+   return sqrt(d);
+#else
   Map<VectorXf> v1(data1, d_len);
   Map<VectorXf> v2(data2, d_len);
   return (v1-v2).norm();
+#endif
 }
 
 
 double  Item_func_vec_distance_cosine::
 calc_distance(float *data1, float *data2, size_t d_len)
 {
+#ifdef WORDS_BIGENDIAN
+   double dotp=0, abs1=0, abs2=0;
+   for (size_t i= 0; i < d_len; i++, data1++, data2++)
+   {
+     float v1, v2;
+     float4get(v1, data1);
+     float4get(v2, data2);
+     abs1+= v1 * v1;
+     abs2+= v2 * v2;
+     dotp+= v1 * v2;
+   }
+   return 1 - dotp/sqrt(abs1*abs2);
+#else
   Map<VectorXf> v1(data1, d_len);
   Map<VectorXf> v2(data2, d_len);
   return 1.0f - v1.dot(v2)/v1.norm()/v2.norm();
+#endif
 }
