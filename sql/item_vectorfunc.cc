@@ -220,43 +220,16 @@ using namespace Eigen;
 double Item_func_vec_distance_euclidean::
 calc_distance(float *data1, float *data2, size_t d_len)
 {
-#ifdef WORDS_BIGENDIAN
-   double d= 0;
-   for (size_t i= 0; i < d_len; i++, data1++, data2++)
-   {
-     float v1, v2;
-     float4get(v1, data1);
-     float4get(v2, data2);
-     float dist= v1 - v2;
-     d+= dist * dist;
-   }
-   return sqrt(d);
-#else
-  Map<VectorXf> v1(data1, d_len);
-  Map<VectorXf> v2(data2, d_len);
+  Map<const VectorXf> v1(fix_endianness(data1, d_len));
+  Map<const VectorXf> v2(fix_endianness(data2, d_len));
   return (v1-v2).norm();
-#endif
 }
 
 
 double  Item_func_vec_distance_cosine::
 calc_distance(float *data1, float *data2, size_t d_len)
 {
-#ifdef WORDS_BIGENDIAN
-   double dotp=0, abs1=0, abs2=0;
-   for (size_t i= 0; i < d_len; i++, data1++, data2++)
-   {
-     float v1, v2;
-     float4get(v1, data1);
-     float4get(v2, data2);
-     abs1+= v1 * v1;
-     abs2+= v2 * v2;
-     dotp+= v1 * v2;
-   }
-   return 1 - dotp/sqrt(abs1*abs2);
-#else
-  Map<VectorXf> v1(data1, d_len);
-  Map<VectorXf> v2(data2, d_len);
+  Map<const VectorXf> v1(fix_endianness(data1, d_len));
+  Map<const VectorXf> v2(fix_endianness(data2, d_len));
   return 1.0f - v1.dot(v2)/v1.norm()/v2.norm();
-#endif
 }

@@ -36,3 +36,17 @@ bool mhnsw_uses_distance(const TABLE *table, KEY *keyinfo, const Item *dist);
 
 extern ha_create_table_option mhnsw_index_options[];
 extern st_plugin_int *mhnsw_plugin;
+
+/* helpers to fix floats on bigendian */
+#ifdef WORDS_BIGENDIAN
+static inline const float *copy_floats(void *dst, const void *src, size_t num)
+{
+  float *from= (float*)src, *to= (float*)dst;
+  for (; num--; from++, to++)
+    float4get(*to, from);
+  return (float*)dst;
+}
+#define fix_endianness(V,L) copy_floats(alloca(sizeof(float)*L),V,L),L
+#else
+#define fix_endianness(V,L) (const float*)V,L
+#endif
