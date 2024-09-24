@@ -502,6 +502,15 @@ private:
   (because id().space() is the temporary tablespace). */
   Atomic_relaxed<lsn_t> oldest_modification_;
 
+  /** buf_block_t::invalidate() will increment this field every time
+  a pointer to a record on the page may become obsolete for the quick path of
+  btr_cur_t::restore_position(). */
+  uint32_t modify_clock_;
+
+  /** ut_time_ms() of the first access of an in_file() block in buf_pool;
+  0=never. */
+  Atomic_relaxed<uint32_t> access_time;
+
 public:
   /** state() of unused block (in buf_pool.free list) */
   static constexpr uint32_t NOT_USED= 0;
@@ -565,13 +574,6 @@ public:
   /** member of buf_pool.LRU; protected by buf_pool.mutex */
   UT_LIST_NODE_T(buf_page_t) LRU;
 
-  /** ut_time_ms() of the first access of an in_file() block in buf_pool;
-  0=never.
-
-  FIXME: Can we somehow combine this with another 32-bit field, to
-  reduce sizeof(buf_page_t) by 8? */
-  Atomic_relaxed<unsigned> access_time;
-
   buf_page_t() : id_{0}
   {
     static_assert(NOT_USED == 0, "compatibility");
@@ -581,14 +583,14 @@ public:
   buf_page_t(const buf_page_t &b) :
     id_(b.id_), hash(b.hash),
     oldest_modification_(b.oldest_modification_),
+    modify_clock_(b.modify_clock_), access_time(b.access_time),
     lock() /* not copied */,
     frame(b.frame), zip(b.zip),
 #ifdef UNIV_DEBUG
     in_zip_hash(b.in_zip_hash), in_LRU_list(b.in_LRU_list),
     in_page_hash(b.in_page_hash), in_free_list(b.in_free_list),
 #endif /* UNIV_DEBUG */
-    list(b.list), LRU(b.LRU),
-    access_time(b.access_time)
+    list(b.list), LRU(b.LRU)
   {
     lock.init();
   }
@@ -604,6 +606,7 @@ public:
     ut_d(in_free_list= false);
     ut_d(in_LRU_list= false);
     ut_d(in_page_hash= false);
+    modify_clock_= 0;
     access_time= 0;
     zip.clear(state, ssize);
   }
@@ -822,33 +825,43 @@ public:
   The block can be dirty, but it must not be I/O-fixed or bufferfixed. */
   inline bool can_relocate() const;
   /** @return whether the block has been flagged old in buf_pool.LRU */
-  inline bool is_old() const;
+  inline bool is_old() const noexcept;
   /** Set whether a block is old in buf_pool.LRU */
-  template<bool old> inline void set_old();
-  /** Flag a page accessed in buf_pool
-  @return whether this is not the first access */
-  bool set_accessed()
-  {
-    if (is_accessed()) return true;
-    access_time= static_cast<uint32_t>(ut_time_ms());
-    return false;
-  }
+  template<bool old> inline void set_old() noexcept;
   /** @return ut_time_ms() at the time of first access of a block in buf_pool
   @retval 0 if not accessed */
-  unsigned is_accessed() const { ut_ad(in_file()); return access_time; }
+  inline unsigned is_accessed() const noexcept { return access_time; }
+
+  /** @return number of invalidate() calls */
+  uint64_t modify_clock() const noexcept
+  {
+    ut_ad(frame);
+    ut_ad(in_file());
+    ut_ad(lock.have_any());
+    return modify_clock_;
+  }
+
+  /** Mark the block invalid for optimistic btr_pcur_t::restore_position()
+  when a record is deleted or the page is reorganized or freed. */
+  inline void invalidate() noexcept;
 
   /** Mark a block recently accessed, without updating access_time
   (when we do not want to trigger read-ahead) */
-  void flag_accessed_only() { zip.set_accessed(); }
+  void flag_accessed_only() noexcept { zip.set_accessed(); }
 
   /** Mark the block as accessed
-  @return previous value of is_accessed()
-  @retval 0 if this is the first-time access */
-  uint32_t flag_accessed() { flag_accessed_only(); return set_accessed(); }
+  @return whether set_accessed() or flag_accessed() had already been invoked
+  on this block */
+  bool flag_accessed() noexcept;
+
+  /** Set the time of the first access
+  @return whether set_accessed() or flag_accessed() had already been invoked
+  on this block */
+  bool set_accessed() noexcept;
 
   /** Clear flag_accessed_only() during a batch
   @param tm  is_accessed() threshold */
-  void make_young(uint32_t tm);
+  void make_young(uint32_t tm) noexcept;
 };
 
 /** The buffer control block structure */
@@ -869,19 +882,8 @@ struct buf_block_t{
   /** member of buf_pool.unzip_LRU (if belongs_to_unzip_LRU()) */
   UT_LIST_NODE_T(buf_block_t) unzip_LRU;
 
-private:
-  /** invalidate() will increment this field every time a pointer to
-  a record on the page may become obsolete for the quick path of
-  btr_cur_t::restore_pos(). */
-  uint64_t modify_clock_;
-public:
-  inline uint64_t modify_clock() const noexcept
-  {
-    ut_ad(page.frame);
-    ut_ad(page.in_file());
-    ut_ad(page.lock.have_any());
-    return modify_clock_;
-  }
+  /** @return number of invalidate() calls */
+  uint64_t modify_clock() const noexcept { return page.modify_clock(); }
 
 #ifdef BTR_CUR_HASH_ADAPT
 	/** @name Hash search fields (unprotected)
@@ -1005,9 +1007,9 @@ public:
 #endif /* BTR_CUR_HASH_ADAPT */
   }
 
-  /** Mark the block invalid for optimistic btr_pcur_t::restore_pos()
+  /** Mark the block invalid for optimistic btr_pcur_t::restore_position()
   when a record is deleted or the page is reorganized or freed. */
-  inline void invalidate() noexcept;
+  void invalidate() noexcept { page.invalidate(); }
 };
 
 /**********************************************************************//**
@@ -2054,7 +2056,7 @@ inline bool buf_page_t::can_relocate() const
 }
 
 /** @return whether the block has been flagged old in buf_pool.LRU */
-inline bool buf_page_t::is_old() const
+inline bool buf_page_t::is_old() const noexcept
 {
   mysql_mutex_assert_owner(&buf_pool.mutex);
   ut_ad(in_file());
@@ -2063,7 +2065,7 @@ inline bool buf_page_t::is_old() const
 }
 
 /** Set whether a block is old in buf_pool.LRU */
-template<bool old> inline void buf_page_t::set_old()
+template<bool old> inline void buf_page_t::set_old() noexcept
 {
   mysql_mutex_assert_owner(&buf_pool.mutex);
   ut_ad(in_LRU_list);
@@ -2091,17 +2093,17 @@ template<bool old> inline void buf_page_t::set_old()
   zip.set_old<old>();
 }
 
-inline void buf_block_t::invalidate() noexcept
+inline void buf_page_t::invalidate() noexcept
 {
-  ut_ad(page.frame);
-  ut_ad(page.in_file());
+  ut_ad(frame);
+  ut_ad(in_file());
 #ifdef SAFE_MUTEX
-  ut_ad((mysql_mutex_is_owner(&buf_pool.mutex) && !page.buf_fix_count()) ||
-        page.lock.have_u_or_x());
+  ut_ad((mysql_mutex_is_owner(&buf_pool.mutex) && !buf_fix_count()) ||
+        lock.have_u_or_x());
 #else /* SAFE_MUTEX */
-  ut_ad(!page.buf_fix_count() || page.lock.have_u_or_x());
+  ut_ad(!buf_fix_count() || lock.have_u_or_x());
 #endif /* SAFE_MUTEX */
-  assert_block_ahi_valid(this);
+  assert_block_ahi_valid(reinterpret_cast<buf_block_t*>(this));
   modify_clock_++;
 }
 

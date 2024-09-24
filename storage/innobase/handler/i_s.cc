@@ -4073,7 +4073,7 @@ i_s_innodb_buffer_page_get_info(
 
 		page_info->oldest_mod = bpage->oldest_modification();
 
-		page_info->access_time = bpage->access_time;
+		page_info->access_time = bpage->is_accessed();
 
 		const auto s = bpage->zip.get_state();
 

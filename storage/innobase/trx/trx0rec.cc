@@ -2067,7 +2067,7 @@ purge_sys_t::view_guard::get(const page_id_t id, mtr_t *mtr)
       /* In MVCC operations (outside purge tasks), we will refresh the
       buf_pool.LRU position. In purge, we expect the page to be freed
       soon, at the end of the current batch. */
-      block->page.flag_accessed();
+      block->page.flag_accessed_only();
   }
   return block;
 }

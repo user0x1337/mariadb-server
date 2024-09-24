@@ -834,8 +834,10 @@ inline void buf_block_t::init(byte *frame) noexcept
   assert_block_ahi_empty_on_init(this);
   page.frame= frame;
 
-  MEM_MAKE_DEFINED(&modify_clock_, sizeof modify_clock_);
-  ut_ad(!modify_clock_);
+  MEM_MAKE_DEFINED(&page.modify_clock_, sizeof page.modify_clock_);
+  ut_ad(!page.modify_clock_);
+  MEM_MAKE_DEFINED(&page.access_time, sizeof page.access_time);
+  ut_ad(!page.access_time);
   MEM_MAKE_DEFINED(&page.lock, sizeof page.lock);
   page.lock.init();
   MEM_MAKE_DEFINED(&page.zip.data, sizeof page.zip.data);
@@ -2269,7 +2271,7 @@ lookup:
     ut_ad(s < buf_page_t::READ_FIX || s >= buf_page_t::WRITE_FIX);
   }
 
-  bpage->flag_accessed();
+  bpage->set_accessed();
 
 #ifdef UNIV_DEBUG
   if (!(++buf_dbg_counter % 5771)) buf_pool.validate();
@@ -3245,6 +3247,27 @@ buf_block_t *buf_page_try_get(const page_id_t page_id, mtr_t *mtr)
   return block;
 }
 
+bool buf_page_t::flag_accessed() noexcept
+{
+  flag_accessed_only();
+  return set_accessed();
+}
+
+bool buf_page_t::set_accessed() noexcept
+{
+  ut_ad(in_file());
+#ifdef SAFE_MUTEX
+  ut_ad((mysql_mutex_is_owner(&buf_pool.mutex) && !buf_fix_count()) ||
+        lock.have_any());
+#else /* SAFE_MUTEX */
+  ut_ad(!buf_fix_count() || lock.have_any());
+#endif /* SAFE_MUTEX */
+  if (access_time)
+    return true;
+  access_time= uint32_t(ut_time_ms());
+  return false;
+}
+
 TRANSACTIONAL_TARGET
 static buf_block_t *buf_page_create_low(page_id_t page_id, ulint zip_size,
                                         mtr_t *mtr, buf_block_t *free_block)
@@ -3437,7 +3460,7 @@ retry:
 
   mtr->memo_push(reinterpret_cast<buf_block_t*>(bpage), MTR_MEMO_PAGE_X_FIX);
 
-  bpage->set_accessed();
+  bpage->flag_accessed();
 
   /* Delete possible entries for the page from the insert buffer:
   such can exist if the page belonged to an index which was dropped */

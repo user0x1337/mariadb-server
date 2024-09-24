@@ -1241,7 +1241,7 @@ static void buf_flush_discard_page(buf_page_t *bpage)
   buf_LRU_free_page(bpage, true);
 }
 
-void buf_page_t::make_young(uint32_t tm)
+void buf_page_t::make_young(uint32_t tm) noexcept
 {
   if (!tm || !is_old());
   else if (tm >= is_accessed())
