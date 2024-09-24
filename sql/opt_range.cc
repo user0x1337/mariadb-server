@@ -3503,9 +3503,19 @@ bool calculate_cond_selectivity_for_table(THD *thd, TABLE *table, Item **cond)
               */
               selectivity_mult= ((double)(i+1)) / i;
             }
-            table->cond_selectivity*= selectivity_mult;
             selectivity_for_index.add("selectivity_multiplier",
                                       selectivity_mult);
+
+            //psergey-todo: selectivity_mult cannot make this index's
+            //selectivity greater than 1...
+            if (selectivity_mult > 1.0 / quick_cond_selectivity)
+            {
+              selectivity_for_index.add("note", "multiplier too high, clipping");
+              selectivity_mult= 1.0/quick_cond_selectivity;
+              selectivity_for_index.add("clipped_multiplier", selectivity_mult);
+            }
+
+            table->cond_selectivity*= selectivity_mult;
           }
           /*
             We need to set selectivity for fields supported by indexes.
