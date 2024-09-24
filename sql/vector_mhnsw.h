@@ -41,8 +41,9 @@ extern st_plugin_int *mhnsw_plugin;
 #ifdef WORDS_BIGENDIAN
 static inline const float *copy_floats(void *dst, const void *src, size_t num)
 {
-  float *from= (float*)src, *to= (float*)dst;
-  for (; num--; from++, to++)
+  uchar *from= (uchar*)src;
+  float *to= (float*)dst;
+  for (; num--; from+= 4, to++)
     float4get(*to, from);
   return (float*)dst;
 }
