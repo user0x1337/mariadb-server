@@ -66,7 +66,7 @@ static MYSQL_THDVAR_ENUM(distance_function, PLUGIN_VAR_RQCMDARG,
 
 struct ha_index_option_struct
 {
-  uint M;
+  ulonglong M;
   metric_type metric;
 };
 
