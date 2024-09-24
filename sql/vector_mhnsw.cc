@@ -697,11 +697,13 @@ int MHNSW_Context::acquire(MHNSW_Context **ctx, TABLE *table, bool for_update)
 /* copy the vector, preprocessed as needed */
 const FVector *FVector::create(const MHNSW_Context *ctx, void *mem, const void *src)
 {
-  const void *vdata= ctx->use_subdist ? alloca(ctx->byte_len) : src;
   Map<const VectorXf> in(fix_endianness(src, ctx->vec_len));
-  Map<VectorXf> v((float*)vdata, ctx->vec_len);
+  Map<VectorXf> v((float*)in.data(), ctx->vec_len);
   if (ctx->use_subdist)
+  {
+    new (&v) Map<VectorXf>((float*)alloca(ctx->byte_len), ctx->vec_len);
     v= ctx->randomizer * in;
+  }
 
   FVector *vec= align_ptr(mem);
   float scale= std::max(-v.minCoeff(), v.maxCoeff());
