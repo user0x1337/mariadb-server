@@ -713,24 +713,6 @@ AbstractCallback::init(
 }
 
 /**
-TODO: This can be made parallel trivially by chunking up the file
-and creating a callback per thread.. Main benefit will be to use
-multiple CPUs for checksums and compressed tables. We have to do
-compressed tables block by block right now. Secondly we need to
-decompress/compress and copy too much of data. These are
-CPU intensive.
-
-Iterate over all the pages in the tablespace.
-@param iter - Tablespace iterator
-@param block - block to use for IO
-@param callback - Callback to inspect and update page contents
-@retval DB_SUCCESS or error code */
-static dberr_t fil_iterate(
-	const fil_iterator_t&	iter,
-	buf_block_t*		block,
-	AbstractCallback&	callback);
-
-/**
 Try and determine the index root pages by checking if the next/prev
 pointers are both FIL_NULL. We need to ensure that skip deleted pages. */
 struct FetchIndexRootPages : public AbstractCallback {
@@ -934,11 +916,8 @@ public:
 		}
 	}
 
-	dberr_t run(const fil_iterator_t& iter,
-		    buf_block_t* block) UNIV_NOTHROW override
-	{
-		return fil_iterate(iter, block, *this);
-	}
+	dberr_t run(const fil_iterator_t &iter, buf_block_t *block)
+		noexcept override;
 
 	/** Called for each block as it is read from the file.
 	@param block block to convert, it is not from the buffer pool.
@@ -4039,13 +4018,24 @@ func_exit:
   return err;
 }
 
-static dberr_t fil_iterate(
-	const fil_iterator_t&	iter,
-	buf_block_t*		block,
-	AbstractCallback&	callback)
+
+/**
+TODO: This can be made parallel trivially by chunking up the file
+and creating a callback per thread.. Main benefit will be to use
+multiple CPUs for checksums and compressed tables. We have to do
+compressed tables block by block right now. Secondly we need to
+decompress/compress and copy too much of data. These are
+CPU intensive.
+
+Iterate over all the pages in the tablespace.
+@param iter - Tablespace iterator
+@param block - block to use for IO
+@retval DB_SUCCESS or error code */
+dberr_t PageConverter::run(const fil_iterator_t &iter, buf_block_t *block)
+	noexcept
 {
 	os_offset_t		offset;
-	const ulint		size = callback.physical_size();
+	const ulint		size = physical_size();
 	ulint			n_bytes = iter.n_io_buffers * size;
 
 	byte* page_compress_buf= static_cast<byte*>(malloc(get_buf_size()));
@@ -4056,8 +4046,7 @@ static dberr_t fil_iterate(
 	}
 
 	ulint actual_space_id = 0;
-	const bool full_crc32 = fil_space_t::full_crc32(
-		callback.get_space_flags());
+	const bool full_crc32 = fil_space_t::full_crc32(get_space_flags());
 
 	/* TODO: For ROW_FORMAT=COMPRESSED tables we do a lot of useless
 	copying for non-index pages. Unfortunately, it is
@@ -4067,7 +4056,7 @@ static dberr_t fil_iterate(
 	bool		punch_hole = !my_test_if_thinly_provisioned(iter.file);
 
 	for (offset = iter.start; offset < iter.end; offset += n_bytes) {
-		if (callback.is_interrupted()) {
+		if (is_interrupted()) {
 			err = DB_INTERRUPTED;
 			goto func_exit;
 		}
@@ -4127,7 +4116,7 @@ static dberr_t fil_iterate(
 
 			if (page_no != block->page.id().page_no()) {
 page_corrupted:
-				ib::warn() << callback.filename()
+				ib::warn() << filename()
 					   << ": Page " << (offset / size)
 					   << " at offset " << offset
 					   << " looks corrupted.";
@@ -4144,9 +4133,9 @@ page_corrupted:
 			page_compressed =
 				(full_crc32
 				 && fil_space_t::is_compressed(
-					callback.get_space_flags())
+					get_space_flags())
 				 && buf_page_is_compressed(
-					src, callback.get_space_flags()))
+					src, get_space_flags()))
 				|| type == FIL_PAGE_PAGE_COMPRESSED_ENCRYPTED
 				|| type == FIL_PAGE_PAGE_COMPRESSED;
 
@@ -4158,7 +4147,7 @@ page_corrupted:
 			byte* dst = io_buffer + i * size;
 			bool frame_changed = false;
 			uint key_version = buf_page_get_key_version(
-				src, callback.get_space_flags());
+				src, get_space_flags());
 
 			if (!encrypted) {
 			} else if (!key_version) {
@@ -4177,15 +4166,15 @@ page_corrupted:
 				}
 			} else {
 				if (!buf_page_verify_crypt_checksum(
-					src, callback.get_space_flags())) {
+					src, get_space_flags())) {
 					goto page_corrupted;
 				}
 
 				if ((err = fil_space_decrypt(
 					actual_space_id,
 					iter.crypt_data, dst,
-					callback.physical_size(),
-					callback.get_space_flags(),
+					physical_size(),
+					get_space_flags(),
 					src))) {
 					goto func_exit;
 				}
@@ -4203,7 +4192,7 @@ page_corrupted:
 			if (page_compressed) {
 				ulint compress_length = fil_page_decompress(
 					page_compress_buf, dst,
-					callback.get_space_flags());
+					get_space_flags());
 				ut_ad(compress_length != srv_page_size);
 				if (compress_length == 0) {
 					goto page_corrupted;
@@ -4214,11 +4203,11 @@ page_corrupted:
 					   false,
 					   encrypted && !frame_changed
 					   ? dst : src,
-					   callback.get_space_flags())) {
+					   get_space_flags())) {
 				goto page_corrupted;
 			}
 
-			if ((err = callback(block)) != DB_SUCCESS) {
+			if ((err = (*this)(block)) != DB_SUCCESS) {
 				goto func_exit;
 			} else if (!updated) {
 				updated = !!block->page.frame;
@@ -4256,7 +4245,7 @@ page_corrupted:
 			first page (i.e. page 0) is not encrypted or
 			compressed and there is no need to copy frame. */
 			if (encrypted && block->page.id().page_no() != 0) {
-				byte *local_frame = callback.get_frame(block);
+				byte *local_frame = get_frame(block);
 				ut_ad((writeptr + (i * size)) != local_frame);
 				memcpy((writeptr + (i * size)), local_frame, size);
 			}
@@ -4276,7 +4265,7 @@ page_corrupted:
 				if (ulint len = fil_page_compress(
 					    src,
 					    page_compress_buf,
-					    callback.get_space_flags(),
+					    get_space_flags(),
 					    512,/* FIXME: proper block size */
 					    encrypted)) {
 					/* FIXME: remove memcpy() */
@@ -4443,6 +4432,7 @@ fil_tablespace_iterate(
 		block->page.init(buf_page_t::UNFIXED + 1,
 				 {callback.get_space_id(), 0},
 				 callback.get_zip_ssize());
+		ut_d(block->page.lock.x_lock());
 
 		if (callback.get_zip_ssize()) {
 			/* ROW_FORMAT=COMPRESSED is not optimised for block IO
@@ -4498,6 +4488,8 @@ fil_tablespace_iterate(
 
 		aligned_free(iter.crypt_io_buffer);
 		aligned_free(iter.io_buffer);
+		ut_d(block->page.lock.x_unlock());
+		ut_d(block->page.lock.free());
 	}
 
 	if (err == DB_SUCCESS) {

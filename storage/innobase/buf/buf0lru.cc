@@ -1041,11 +1041,11 @@ static bool buf_LRU_block_remove_hashed(buf_page_t *bpage, const page_id_t id,
 	if (UNIV_LIKELY(!bpage->zip.data)) {
 		MEM_CHECK_ADDRESSABLE(bpage, sizeof(buf_block_t));
 		MEM_CHECK_ADDRESSABLE(bpage->frame, srv_page_size);
-		buf_block_modify_clock_inc((buf_block_t*) bpage);
+		reinterpret_cast<buf_block_t*>(bpage)->invalidate();
 	} else if (const page_t *page = bpage->frame) {
 		MEM_CHECK_ADDRESSABLE(bpage, sizeof(buf_block_t));
 		MEM_CHECK_ADDRESSABLE(bpage->frame, srv_page_size);
-		buf_block_modify_clock_inc((buf_block_t*) bpage);
+		reinterpret_cast<buf_block_t*>(bpage)->invalidate();
 
 		ut_a(!zip || !bpage->oldest_modification());
 		ut_ad(bpage->zip_size());

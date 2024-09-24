@@ -2299,11 +2299,7 @@ page_cur_delete_rec(
 	cur_dir_slot = page_dir_get_nth_slot(block->page.frame, cur_slot_no);
 	cur_n_owned = page_dir_slot_get_n_owned(cur_dir_slot);
 
-	/* The page gets invalid for btr_pcur_restore_pos().
-	We avoid invoking buf_block_modify_clock_inc(block) because its
-	consistency checks would fail for the dummy block that is being
-	used during IMPORT TABLESPACE. */
-	block->modify_clock++;
+	block->invalidate();
 
 	/* Find the next and the previous record. Note that the cursor is
 	left at the next record. */

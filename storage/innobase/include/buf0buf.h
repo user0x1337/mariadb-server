@@ -159,7 +159,7 @@ buf_block_t *buf_page_optimistic_fix(buf_block_t *block, page_id_t id)
 /** Try to acquire a page latch after buf_page_optimistic_fix().
 @param block         buffer-fixed block
 @param rw_latch      RW_S_LATCH or RW_X_LATCH
-@param modify_clock  expected value of block->modify_clock
+@param modify_clock  expected value of block->modify_clock()
 @param mtr           mini-transaction
 @return block if the latch was acquired
 @retval nullptr if block->unfix() was called because it no longer is valid */
@@ -266,16 +266,6 @@ buf_page_create_deferred(uint32_t space_id, ulint zip_size, mtr_t *mtr,
 @param[in]	page	page number
 @param[in,out]	mtr	mini-transaction */
 void buf_page_free(fil_space_t *space, uint32_t page, mtr_t *mtr);
-
-/********************************************************************//**
-Increments the modify clock of a frame by 1. The caller must (1) own the
-buf_pool.mutex and block bufferfix count has to be zero, (2) or own an x-lock
-on the block. */
-UNIV_INLINE
-void
-buf_block_modify_clock_inc(
-/*=======================*/
-	buf_block_t*	block);	/*!< in: block */
 #endif /* !UNIV_INNOCHECKSUM */
 
 /** Check if a buffer is all zeroes.
@@ -471,19 +461,23 @@ public:
 for compressed and uncompressed frames */
 
 class buf_pool_t;
+class FetchIndexRootPages;
+class PageConverter;
 
 class buf_page_t
 {
   friend buf_pool_t;
   friend buf_block_t;
+  friend FetchIndexRootPages;
+  friend PageConverter;
 
   /** @name General fields */
   /* @{ */
 
-public: // FIXME: fix fil_iterate()
   /** Page id. Protected by buf_pool.page_hash.lock_get() when
   the page is in buf_pool.page_hash. */
   page_id_t id_;
+public:
   union {
     /** for in_file(): buf_pool.page_hash link;
     protected by buf_pool.page_hash.lock_get() */
@@ -860,14 +854,8 @@ public:
 /** The buffer control block structure */
 
 struct buf_block_t{
-
-	/** @name General fields */
-	/* @{ */
-
-	buf_page_t	page;		/*!< page information; this must
-					be the first field, so that
-					buf_pool.page_hash can point
-					to buf_page_t or buf_block_t */
+  /* page information; must be the first field */
+  buf_page_t page;
 #ifdef UNIV_DEBUG
   /** whether page.list is in buf_pool.withdraw
   ((state() == NOT_USED)) and the buffer pool is being shrunk;
@@ -880,22 +868,21 @@ struct buf_block_t{
 #endif
   /** member of buf_pool.unzip_LRU (if belongs_to_unzip_LRU()) */
   UT_LIST_NODE_T(buf_block_t) unzip_LRU;
-	/* @} */
-	/** @name Optimistic search field */
-	/* @{ */
 
-	ib_uint64_t	modify_clock;	/*!< this clock is incremented every
-					time a pointer to a record on the
-					page may become obsolete; this is
-					used in the optimistic cursor
-					positioning: if the modify clock has
-					not changed, we know that the pointer
-					is still valid; this field may be
-					changed if the thread (1) owns the
-					pool mutex and the page is not
-					bufferfixed, or (2) the thread has an
-					x-latch on the block */
-	/* @} */
+private:
+  /** invalidate() will increment this field every time a pointer to
+  a record on the page may become obsolete for the quick path of
+  btr_cur_t::restore_pos(). */
+  uint64_t modify_clock_;
+public:
+  inline uint64_t modify_clock() const noexcept
+  {
+    ut_ad(page.frame);
+    ut_ad(page.in_file());
+    ut_ad(page.lock.have_any());
+    return modify_clock_;
+  }
+
 #ifdef BTR_CUR_HASH_ADAPT
 	/** @name Hash search fields (unprotected)
 	NOTE that these fields are NOT protected by any semaphore! */
@@ -994,6 +981,10 @@ struct buf_block_t{
   @retval 0 if not compressed */
   ulint zip_size() const { return page.zip_size(); }
 
+  /** Initialize the block as part of buf_pool
+  @param frame  the page frame */
+  inline void init(byte *frame) noexcept;
+
   /** Initialize the block.
   @param page_id   page identifier
   @param zip_ssize ROW_FORMAT=COMPRESSED page size shift, or 0
@@ -1013,6 +1004,10 @@ struct buf_block_t{
     left_side= true;
 #endif /* BTR_CUR_HASH_ADAPT */
   }
+
+  /** Mark the block invalid for optimistic btr_pcur_t::restore_pos()
+  when a record is deleted or the page is reorganized or freed. */
+  inline void invalidate() noexcept;
 };
 
 /**********************************************************************//**
@@ -2096,6 +2091,20 @@ template<bool old> inline void buf_page_t::set_old()
   zip.set_old<old>();
 }
 
+inline void buf_block_t::invalidate() noexcept
+{
+  ut_ad(page.frame);
+  ut_ad(page.in_file());
+#ifdef SAFE_MUTEX
+  ut_ad((mysql_mutex_is_owner(&buf_pool.mutex) && !page.buf_fix_count()) ||
+        page.lock.have_u_or_x());
+#else /* SAFE_MUTEX */
+  ut_ad(!page.buf_fix_count() || page.lock.have_u_or_x());
+#endif /* SAFE_MUTEX */
+  assert_block_ahi_valid(this);
+  modify_clock_++;
+}
+
 #ifdef UNIV_DEBUG
 /** Forbid the release of the buffer pool mutex. */
 # define buf_pool_mutex_exit_forbid() do {		\
@@ -2194,7 +2203,4 @@ struct	CheckUnzipLRUAndLRUList {
 	}
 };
 #endif /* UNIV_DEBUG */
-
-#include "buf0buf.inl"
-
 #endif /* !UNIV_INNOCHECKSUM */

@@ -3137,7 +3137,7 @@ set_start_lsn:
 			buf_zip_decompress(block, false);
 		}
 
-		buf_block_modify_clock_inc(block);
+		block->invalidate();
 		mysql_mutex_lock(&log_sys.flush_order_mutex);
 		buf_flush_note_modification(block, start_lsn, end_lsn);
 		mysql_mutex_unlock(&log_sys.flush_order_mutex);

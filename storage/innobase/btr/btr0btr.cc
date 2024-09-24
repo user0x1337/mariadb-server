@@ -695,10 +695,7 @@ dberr_t btr_page_free(dict_index_t* index, buf_block_t* block, mtr_t* mtr,
   /* The root page is freed by btr_free_root(). */
   ut_ad(page != index->page);
   ut_ad(mtr->is_named_space(index->table->space));
-
-  /* The page gets invalid for optimistic searches: increment the frame
-  modify clock */
-  buf_block_modify_clock_inc(block);
+  block->invalidate();
 
   /* TODO: Discard any operations for block from mtr->m_log.
   The page will be freed, so previous changes to it by this

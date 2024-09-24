@@ -829,32 +829,26 @@ void buf_page_print(const byte *read_buf, ulint zip_size)
 /** Initialize a buffer page descriptor.
 @param[in,out]	block	buffer page descriptor
 @param[in]	frame	buffer page frame */
-static
-void
-buf_block_init(buf_block_t* block, byte* frame)
+inline void buf_block_t::init(byte *frame) noexcept
 {
-	/* This function should only be executed at database startup or by
-	buf_pool.resize(). Either way, adaptive hash index must not exist. */
-	assert_block_ahi_empty_on_init(block);
+  assert_block_ahi_empty_on_init(this);
+  page.frame= frame;
 
-	block->page.frame = frame;
-
-	MEM_MAKE_DEFINED(&block->modify_clock, sizeof block->modify_clock);
-	ut_ad(!block->modify_clock);
-	MEM_MAKE_DEFINED(&block->page.lock, sizeof block->page.lock);
-	block->page.lock.init();
-	MEM_MAKE_DEFINED(&block->page.zip.data, sizeof block->page.zip.data);
-	ut_ad(!block->page.zip.data);
-	block->page.init(buf_page_t::NOT_USED, page_id_t(~0ULL), 0);
+  MEM_MAKE_DEFINED(&modify_clock_, sizeof modify_clock_);
+  ut_ad(!modify_clock_);
+  MEM_MAKE_DEFINED(&page.lock, sizeof page.lock);
+  page.lock.init();
+  MEM_MAKE_DEFINED(&page.zip.data, sizeof page.zip.data);
+  ut_ad(!page.zip.data);
+  page.init(buf_page_t::NOT_USED, page_id_t(~0ULL), 0);
 #ifdef BTR_CUR_HASH_ADAPT
-	MEM_MAKE_DEFINED(&block->index, sizeof block->index);
-	ut_ad(!block->index);
+  MEM_MAKE_DEFINED(&index, sizeof index);
+  ut_ad(!index);
 #endif /* BTR_CUR_HASH_ADAPT */
-	ut_d(block->in_unzip_LRU_list = false);
-	ut_d(block->in_withdraw_list = false);
-
-	MEM_MAKE_DEFINED(&block->page.hash, sizeof block->page.hash);
-	ut_ad(!block->page.hash);
+  ut_d(in_unzip_LRU_list= false);
+  ut_d(in_withdraw_list= false);
+  MEM_MAKE_DEFINED(&page.hash, sizeof page.hash);
+  ut_ad(!page.hash);
 }
 
 /** Allocate a chunk of buffer frames.
@@ -927,7 +921,7 @@ inline bool buf_pool_t::chunk_t::create(size_t bytes)
   buf_block_t *block= blocks;
 
   for (auto i= size; i--; ) {
-    buf_block_init(block, frame);
+    block->init(frame);
     MEM_UNDEFINED(block->page.frame, srv_page_size);
     /* Add the block to the free list */
     UT_LIST_ADD_LAST(buf_pool.free, &block->page);
@@ -1250,7 +1244,7 @@ inline bool buf_pool_t::realloc(buf_block_t *block)
 		ut_ad(&block->page == page_hash.get(id, chain));
 		buf_pool.page_hash.replace(chain, &block->page,
 					   &new_block->page);
-		buf_block_modify_clock_inc(block);
+		block->invalidate();
 		static_assert(FIL_PAGE_OFFSET % 4 == 0, "alignment");
 		memset_aligned<4>(block->page.frame
 				  + FIL_PAGE_OFFSET, 0xff, 4);
@@ -3169,7 +3163,7 @@ buf_block_t *buf_page_optimistic_get(buf_block_t *block,
     ut_ad(!ibuf_inside(mtr) ||
           ibuf_page(block->page.id(), block->zip_size(), nullptr));
 
-    if (modify_clock != block->modify_clock || block->page.is_freed())
+    if (modify_clock != block->modify_clock() || block->page.is_freed())
     {
       block->page.lock.s_unlock();
       goto fail;
@@ -3184,7 +3178,7 @@ buf_block_t *buf_page_optimistic_get(buf_block_t *block,
     block->page.lock.u_x_upgrade();
     block->page.unfix();
     mtr->page_lock_upgrade(*block);
-    ut_ad(modify_clock == block->modify_clock);
+    ut_ad(modify_clock == block->modify_clock());
   }
   else if (!block->page.lock.x_lock_try())
     goto fail;
@@ -3194,7 +3188,7 @@ buf_block_t *buf_page_optimistic_get(buf_block_t *block,
     ut_ad(!ibuf_inside(mtr) ||
           ibuf_page(block->page.id(), block->zip_size(), nullptr));
 
-    if (modify_clock != block->modify_clock || block->page.is_freed())
+    if (modify_clock != block->modify_clock() || block->page.is_freed())
     {
       block->page.lock.x_unlock();
       goto fail;
