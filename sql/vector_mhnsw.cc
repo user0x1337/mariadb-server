@@ -66,7 +66,7 @@ static MYSQL_THDVAR_ENUM(distance_function, PLUGIN_VAR_RQCMDARG,
 
 struct ha_index_option_struct
 {
-  ulonglong M;
+  ulonglong M;                 // a numeric options must be ulonglong
   metric_type metric;
 };
 
@@ -377,7 +377,7 @@ public:
     : randomizer(nullptr, 1, 1),
       tref_len(t->file->ref_length),
       gref_len(t->hlindex->file->ref_length),
-      M(t->s->key_info[t->s->keys].option_struct->M),
+      M(static_cast<uint>(t->s->key_info[t->s->keys].option_struct->M)),
       metric(t->s->key_info[t->s->keys].option_struct->metric)
   {
     mysql_rwlock_init(PSI_INSTRUMENT_ME, &commit_lock);
