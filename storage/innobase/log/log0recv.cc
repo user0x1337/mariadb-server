@@ -189,7 +189,7 @@ public:
     size_t size;
     const byte *page= block.page.zip.data;
     if (UNIV_LIKELY_NULL(page))
-      size= (UNIV_ZIP_SIZE_MIN >> 1) << block.page.zip.ssize;
+      size= (UNIV_ZIP_SIZE_MIN >> 1) << block.page.zip.ssize();
     else
     {
       page= block.page.frame;
@@ -319,7 +319,7 @@ page_corrupted:
       switch (b & 0x70) {
       case EXTENDED:
         if (UNIV_UNLIKELY(block.page.id().page_no() < 3 ||
-                          block.page.zip.ssize))
+                          block.page.zip.ssize()))
           goto record_corrupted;
         static_assert(INIT_ROW_FORMAT_REDUNDANT == 0, "compatiblity");
         static_assert(INIT_ROW_FORMAT_DYNAMIC == 1, "compatibility");

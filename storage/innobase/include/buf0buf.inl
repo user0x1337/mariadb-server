@@ -26,55 +26,6 @@ Created 11/5/1995 Heikki Tuuri
 
 #include "buf0lru.h"
 
-/** Determine if a block is still close enough to the MRU end of the LRU list
-meaning that it is not in danger of getting evicted and also implying
-that it has been accessed recently.
-The page must be either buffer-fixed, or its page hash must be locked.
-@param[in]	bpage		buffer pool page
-@return whether bpage is close to MRU end of LRU */
-inline bool buf_page_peek_if_young(const buf_page_t *bpage)
-{
-	/* FIXME: bpage->freed_page_clock is 31 bits */
-	return((buf_pool.freed_page_clock & ((1UL << 31) - 1))
-	       < (bpage->freed_page_clock
-		  + (buf_pool.curr_size
-		     * (BUF_LRU_OLD_RATIO_DIV - buf_pool.LRU_old_ratio)
-		     / (BUF_LRU_OLD_RATIO_DIV * 4))));
-}
-
-/** Determine if a block should be moved to the start of the LRU list if
-there is danger of dropping from the buffer pool.
-@param[in]	bpage		buffer pool page
-@return true if bpage should be made younger */
-inline bool buf_page_peek_if_too_old(const buf_page_t *bpage)
-{
-	if (buf_pool.freed_page_clock == 0) {
-		/* If eviction has not started yet, do not update the
-		statistics or move blocks in the LRU list.  This is
-		either the warm-up phase or an in-memory workload. */
-		return(FALSE);
-	} else if (buf_LRU_old_threshold_ms && bpage->old) {
-		uint32_t access_time = bpage->is_accessed();
-
-		/* It is possible that the below comparison returns an
-		unexpected result. 2^32 milliseconds pass in about 50 days,
-		so if the difference between ut_time_ms() and access_time
-		is e.g. 50 days + 15 ms, then the below will behave as if
-		it is 15 ms. This is known and fixing it would require to
-		increase buf_page_t::access_time from 32 to 64 bits. */
-		if (access_time
-		    && ((ib_uint32_t) (ut_time_ms() - access_time))
-		    >= buf_LRU_old_threshold_ms) {
-			return(TRUE);
-		}
-
-		buf_pool.stat.n_pages_not_made_young++;
-		return false;
-	} else {
-		return !buf_page_peek_if_young(bpage);
-	}
-}
-
 /** Allocate a buffer block.
 @return own: the allocated block, in state BUF_BLOCK_MEMORY */
 inline buf_block_t *buf_block_alloc()

@@ -1240,6 +1240,15 @@ static void buf_flush_discard_page(buf_page_t *bpage)
   buf_LRU_free_page(bpage, true);
 }
 
+void buf_page_t::make_young(uint32_t tm)
+{
+  if (!tm || !is_old());
+  else if (tm >= is_accessed())
+    buf_page_make_young(this);
+  else
+    buf_pool.stat.n_pages_not_made_young++;
+}
+
 /** Flush dirty blocks from the end buf_pool.LRU,
 and move clean blocks to buf_pool.free.
 @param max    maximum number of blocks to flush
@@ -1271,6 +1280,10 @@ static void buf_flush_LRU_list_batch(ulint max, flush_counters_t *n)
   page less than 5% of BP. */
   size_t pool_limit= buf_pool.curr_size / 20 - 1;
   auto buf_lru_min_len= std::min<size_t>(pool_limit, BUF_LRU_MIN_LEN);
+  const uint32_t tm= buf_pool.LRU_old_time_threshold
+    ? uint32_t(ut_time_ms()/* FIXME: outside mutex*/ -
+               buf_pool.LRU_old_time_threshold)
+    : 0;
 
   for (buf_page_t *bpage= UT_LIST_GET_LAST(buf_pool.LRU);
        bpage &&
@@ -1281,6 +1294,13 @@ static void buf_flush_LRU_list_batch(ulint max, flush_counters_t *n)
   {
     buf_page_t *prev= UT_LIST_GET_PREV(LRU, bpage);
     buf_pool.lru_hp.set(prev);
+
+    if (bpage->zip.was_accessed())
+    {
+      bpage->make_young(tm);
+      continue;
+    }
+
     auto state= bpage->state();
     ut_ad(state >= buf_page_t::FREED);
     ut_ad(bpage->in_LRU_list);
@@ -1436,6 +1456,11 @@ static ulint buf_do_flush_list_batch(ulint max_n, lsn_t lsn)
   static_assert(FIL_NULL > SRV_TMP_SPACE_ID, "consistency");
   static_assert(FIL_NULL > SRV_SPACE_ID_UPPER_BOUND, "consistency");
 
+  const uint32_t tm= buf_pool.LRU_old_time_threshold
+    ? uint32_t(ut_time_ms()/* FIXME: outside mutex*/ -
+               buf_pool.LRU_old_time_threshold)
+    : 0;
+
   /* Start from the end of the list looking for a suitable block to be
   flushed. */
   ulint len= UT_LIST_GET_LEN(buf_pool.flush_list);
@@ -1447,6 +1472,9 @@ static ulint buf_do_flush_list_batch(ulint max_n, lsn_t lsn)
     if (oldest_modification >= lsn)
       break;
     ut_ad(bpage->in_file());
+
+    if (bpage->zip.was_accessed())
+      bpage->make_young(tm);
 
     {
       buf_page_t *prev= UT_LIST_GET_PREV(list, bpage);
@@ -2423,8 +2451,9 @@ static void buf_flush_page_cleaner()
       mysql_mutex_unlock(&buf_pool.flush_list_mutex);
       n= srv_max_io_capacity;
       mysql_mutex_lock(&buf_pool.mutex);
+      // FIXME: tm= (abstime.tv_sec-1) * 1000 + abstime.tv_nsec / 1000000;
     LRU_flush:
-      n= buf_flush_LRU(n);
+      n= buf_flush_LRU(n /*, tm */);
       mysql_mutex_unlock(&buf_pool.mutex);
       last_pages+= n;
     check_oldest_and_set_idle:

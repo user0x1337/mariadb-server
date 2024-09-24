@@ -463,7 +463,7 @@ public:
 	@param trx covering transaction */
 	AbstractCallback(trx_t* trx, ulint space_id)
 		:
-		m_zip_size(0),
+		m_zip_ssize(0),
 		m_trx(trx),
 		m_space(space_id),
 		m_xdes(),
@@ -487,7 +487,7 @@ public:
 	/** @return true if compressed table. */
 	bool is_compressed_table() const UNIV_NOTHROW
 	{
-		return get_zip_size();
+		return get_zip_ssize();
 	}
 
 	/** @return the tablespace flags */
@@ -507,10 +507,10 @@ public:
 		m_filepath = filename;
 	}
 
-	ulint get_zip_size() const { return m_zip_size; }
+	uint16_t get_zip_ssize() const { return m_zip_ssize; }
 	ulint physical_size() const
 	{
-		return m_zip_size ? m_zip_size : srv_page_size;
+		return m_zip_ssize ? 512U << m_zip_ssize : srv_page_size;
 	}
 
 	const char* filename() const { return m_filepath; }
@@ -552,11 +552,10 @@ protected:
 		ulint		page_no,
 		const page_t*	page) const UNIV_NOTHROW
 	{
-		ulint	offset;
-
-		offset = xdes_calc_descriptor_index(get_zip_size(), page_no);
-
-		return(page + XDES_ARR_OFFSET + XDES_SIZE * offset);
+		return page + XDES_ARR_OFFSET + XDES_SIZE
+			* (ut_2pow_remainder<ulint>(page_no,
+						    physical_size())
+			   / FSP_EXTENT_SIZE);
 	}
 
 	/** Set the current page directory (xdes). If the extent descriptor is
@@ -578,8 +577,8 @@ protected:
 
 		if (mach_read_from_4(XDES_ARR_OFFSET + XDES_STATE + page)
 		    != XDES_FREE) {
-			const ulint physical_size = m_zip_size
-				? m_zip_size : srv_page_size;
+			const ulint physical_size = m_zip_ssize
+				? 512U << m_zip_ssize : srv_page_size;
 
 			m_xdes = UT_NEW_ARRAY_NOKEY(xdes_t, physical_size);
 
@@ -605,7 +604,7 @@ protected:
 	@return true if the page is marked as free */
 	bool is_free(uint32_t page_no) const UNIV_NOTHROW
 	{
-		ut_a(xdes_calc_descriptor_page(get_zip_size(), page_no)
+		ut_a(xdes_calc_descriptor_page(physical_size(), page_no)
 		     == m_xdes_page_no);
 
 		if (m_xdes != 0) {
@@ -620,8 +619,8 @@ protected:
 	}
 
 protected:
-	/** The ROW_FORMAT=COMPRESSED page size, or 0. */
-	ulint			m_zip_size;
+	/** The ROW_FORMAT=COMPRESSED page shift size, or 0. */
+	uint16_t		m_zip_ssize;
 
 	/** File handle to the tablespace */
 	pfs_os_file_t		m_file;
@@ -682,7 +681,8 @@ AbstractCallback::init(
 
 	/* Clear the DATA_DIR flag, which is basically garbage. */
 	m_space_flags &= ~(1U << FSP_FLAGS_POS_RESERVED);
-	m_zip_size = fil_space_t::zip_size(m_space_flags);
+	m_zip_ssize = fil_space_t::full_crc32(m_space_flags)
+                ? 0 : FSP_FLAGS_GET_ZIP_SSIZE(m_space_flags);
 	const ulint logical_size = fil_space_t::logical_size(m_space_flags);
 	const ulint physical_size = fil_space_t::physical_size(m_space_flags);
 
@@ -826,7 +826,7 @@ dberr_t
 FetchIndexRootPages::build_row_import(row_import* cfg) const UNIV_NOTHROW
 {
 	ut_a(cfg->m_table == m_table);
-	cfg->m_zip_size = m_zip_size;
+	cfg->m_zip_size = m_zip_ssize ? 512U << m_zip_ssize : 0;
 	cfg->m_n_indexes = 1;
 
 	if (cfg->m_n_indexes == 0) {
@@ -4429,7 +4429,6 @@ fil_tablespace_iterate(
 	buf_block_t* block = reinterpret_cast<buf_block_t*>
 		(ut_zalloc_nokey(sizeof *block));
 	block->page.frame = page;
-	block->page.init(buf_page_t::UNFIXED + 1, page_id_t{~0ULL});
 
 	/* Read the first page and determine the page size. */
 
@@ -4441,9 +4440,11 @@ fil_tablespace_iterate(
 	}
 
 	if (err == DB_SUCCESS) {
-		block->page.id_ = page_id_t(callback.get_space_id(), 0);
-		if (ulint zip_size = callback.get_zip_size()) {
-			page_zip_set_size(&block->page.zip, zip_size);
+		block->page.init(buf_page_t::UNFIXED + 1,
+				 {callback.get_space_id(), 0},
+				 callback.get_zip_ssize());
+
+		if (callback.get_zip_ssize()) {
 			/* ROW_FORMAT=COMPRESSED is not optimised for block IO
 			for now. We do the IMPORT page by page. */
 			n_io_buffers = 1;
@@ -4453,7 +4454,8 @@ fil_tablespace_iterate(
 
 		/* read (optional) crypt data */
 		iter.crypt_data = fil_space_read_crypt_data(
-			callback.get_zip_size(), page);
+			callback.get_zip_ssize()
+			? 512U << callback.get_zip_ssize() : 0, page);
 
 		/* If tablespace is encrypted, it needs extra buffers */
 		if (iter.crypt_data && n_io_buffers > 1) {
@@ -4481,7 +4483,7 @@ fil_tablespace_iterate(
 					       srv_page_size))
 			: NULL;
 
-		if (block->page.zip.ssize) {
+		if (block->page.zip.ssize()) {
 			ut_ad(iter.n_io_buffers == 1);
 			block->page.frame = iter.io_buffer;
 			block->page.zip.data = block->page.frame

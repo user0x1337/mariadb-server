@@ -300,7 +300,7 @@ rtr_pcur_getnext_from_path(
 			break;
 		}
 
-		buf_page_make_young_if_needed(&block->page);
+		block->page.flag_accessed();
 
 		page = buf_block_get_frame(block);
 		page_ssn = page_get_ssn_id(page);
@@ -685,7 +685,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     return err;
   }
 
-  buf_page_make_young_if_needed(&block->page);
+  block->page.flag_accessed();
 
   const page_t *page= buf_block_get_frame(block);
 #ifdef UNIV_ZIP_DEBUG
@@ -1686,7 +1686,7 @@ corrupted:
 		goto func_exit;
 	}
 
-	buf_page_make_young_if_needed(&page_cursor->block->page);
+	page_cursor->block->page.flag_accessed();
 
 	/* Get the page SSN */
 	page = buf_block_get_frame(page_cursor->block);
@@ -1872,7 +1872,7 @@ rtr_init_match(
 		matches->block = buf_block_alloc();
 	}
 
-	matches->block->page.init(buf_page_t::MEMORY, block->page.id());
+	matches->block->page.init(buf_page_t::MEMORY, block->page.id(), 0);
 	/* We have to copy PAGE_*_SUPREMUM_END bytes so that we can
 	use infimum/supremum of this page as normal btr page for search. */
 	matches->used = page_is_comp(page)

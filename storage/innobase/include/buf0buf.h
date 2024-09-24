@@ -277,21 +277,6 @@ buf_page_create_deferred(uint32_t space_id, ulint zip_size, mtr_t *mtr,
 @param[in,out]	mtr	mini-transaction */
 void buf_page_free(fil_space_t *space, uint32_t page, mtr_t *mtr);
 
-/** Determine if a block is still close enough to the MRU end of the LRU list
-meaning that it is not in danger of getting evicted and also implying
-that it has been accessed recently.
-Note that this is for heuristics only and does not reserve buffer pool
-mutex.
-@param[in]	bpage		buffer pool page
-@return whether bpage is close to MRU end of LRU */
-inline bool buf_page_peek_if_young(const buf_page_t *bpage);
-
-/** Determine if a block should be moved to the start of the LRU list if
-there is danger of dropping from the buffer pool.
-@param[in]	bpage		buffer pool page
-@return true if bpage should be made younger */
-inline bool buf_page_peek_if_too_old(const buf_page_t *bpage);
-
 /********************************************************************//**
 Increments the modify clock of a frame by 1. The caller must (1) own the
 buf_pool.mutex and block bufferfix count has to be zero, (2) or own an x-lock
@@ -582,35 +567,21 @@ public:
   or if state() == MEMORY or state() == REMOVE_HASH. */
   UT_LIST_NODE_T(buf_page_t) list;
 
-	/** @name LRU replacement algorithm fields.
-	Protected by buf_pool.mutex. */
-	/* @{ */
+  /** member of buf_pool.LRU; protected by buf_pool.mutex */
+  UT_LIST_NODE_T(buf_page_t) LRU;
 
-	UT_LIST_NODE_T(buf_page_t) LRU;
-					/*!< node of the LRU list */
-	unsigned	old:1;		/*!< TRUE if the block is in the old
-					blocks in buf_pool.LRU_old */
-	unsigned	freed_page_clock:31;/*!< the value of
-					buf_pool.freed_page_clock
-					when this block was the last
-					time put to the head of the
-					LRU list; a thread is allowed
-					to read this for heuristic
-					purposes without holding any
-					mutex or latch */
-	/* @} */
-	Atomic_counter<unsigned> access_time;	/*!< time of first access, or
-					0 if the block was never accessed
-					in the buffer pool.
+  /** ut_time_ms() of the first access of an in_file() block in buf_pool;
+  0=never.
 
-					For state() == MEMORY
-					blocks, this field can be repurposed
-					for something else.
+  For state() == MEMORY, this field can be repurposed for something else.
 
-					When this field counts log records
-					and bytes allocated for recv_sys.pages,
-					the field is protected by
-					recv_sys_t::mutex. */
+  When this field counts log records and bytes allocated for recv_sys.pages,
+  the field is protected by recv_sys.mutex.
+
+  FIXME: Can we somehow combine this with another 32-bit field, to
+  reduce sizeof(buf_page_t) by 8? */
+  Atomic_relaxed<unsigned> access_time;
+
   buf_page_t() : id_{0}
   {
     static_assert(NOT_USED == 0, "compatibility");
@@ -626,30 +597,27 @@ public:
     in_zip_hash(b.in_zip_hash), in_LRU_list(b.in_LRU_list),
     in_page_hash(b.in_page_hash), in_free_list(b.in_free_list),
 #endif /* UNIV_DEBUG */
-    list(b.list), LRU(b.LRU), old(b.old), freed_page_clock(b.freed_page_clock),
+    list(b.list), LRU(b.LRU),
     access_time(b.access_time)
   {
     lock.init();
   }
 
   /** Initialize some more fields */
-  void init(uint32_t state, page_id_t id)
+  void init(uint32_t state, page_id_t id, uint16_t ssize)
   {
     ut_ad(state < REMOVE_HASH || state >= UNFIXED);
     ut_ad(!lock.is_locked_or_waiting());
     id_= id;
-    zip.fix= state;
     oldest_modification_= 0;
     ut_d(in_zip_hash= false);
     ut_d(in_free_list= false);
     ut_d(in_LRU_list= false);
     ut_d(in_page_hash= false);
-    old= 0;
-    freed_page_clock= 0;
     access_time= 0;
+    zip.clear(state, ssize);
   }
 
-public:
   const page_id_t &id() const { return id_; }
   uint32_t state() const { return zip.fix; }
   static uint32_t buf_fix_count(uint32_t s)
@@ -835,22 +803,25 @@ public:
   /** @return the physical size, in bytes */
   ulint physical_size() const
   {
-    return zip.ssize ? (UNIV_ZIP_SIZE_MIN >> 1) << zip.ssize : srv_page_size;
+    const auto ssize= zip.ssize();
+    return ssize ? (UNIV_ZIP_SIZE_MIN >> 1) << ssize : srv_page_size;
   }
 
   /** @return the ROW_FORMAT=COMPRESSED physical size, in bytes
   @retval 0 if not compressed */
   ulint zip_size() const
   {
-    return zip.ssize ? (UNIV_ZIP_SIZE_MIN >> 1) << zip.ssize : 0;
+    const auto ssize= zip.ssize();
+    return ssize ? (UNIV_ZIP_SIZE_MIN >> 1) << ssize : 0;
   }
 
   /** @return the byte offset of the page within a file */
   os_offset_t physical_offset() const
   {
     os_offset_t o= id().page_no();
-    return zip.ssize
-      ? o << (zip.ssize + (UNIV_ZIP_SIZE_SHIFT_MIN - 1))
+    const auto ssize= zip.ssize();
+    return ssize
+      ? o << (ssize + (UNIV_ZIP_SIZE_SHIFT_MIN - 1))
       : o << srv_page_size_shift;
   }
 
@@ -863,7 +834,7 @@ public:
   /** @return whether the block has been flagged old in buf_pool.LRU */
   inline bool is_old() const;
   /** Set whether a block is old in buf_pool.LRU */
-  inline void set_old(bool old);
+  template<bool old> inline void set_old();
   /** Flag a page accessed in buf_pool
   @return whether this is not the first access */
   bool set_accessed()
@@ -875,6 +846,19 @@ public:
   /** @return ut_time_ms() at the time of first access of a block in buf_pool
   @retval 0 if not accessed */
   unsigned is_accessed() const { ut_ad(in_file()); return access_time; }
+
+  /** Mark a block recently accessed, without updating access_time
+  (when we do not want to trigger read-ahead) */
+  void flag_accessed_only() { zip.set_accessed(); }
+
+  /** Mark the block as accessed
+  @return previous value of is_accessed()
+  @retval 0 if this is the first-time access */
+  uint32_t flag_accessed() { flag_accessed_only(); return set_accessed(); }
+
+  /** Clear flag_accessed_only() during a batch
+  @param tm  is_accessed() threshold */
+  void make_young(uint32_t tm);
 };
 
 /** The buffer control block structure */
@@ -1015,10 +999,24 @@ struct buf_block_t{
   ulint zip_size() const { return page.zip_size(); }
 
   /** Initialize the block.
-  @param page_id  page identifier
-  @param zip_size ROW_FORMAT=COMPRESSED page size, or 0
-  @param state    initial state() */
-  void initialise(const page_id_t page_id, ulint zip_size, uint32_t state);
+  @param page_id   page identifier
+  @param zip_ssize ROW_FORMAT=COMPRESSED page size shift, or 0
+  @param state     initial state() */
+  void initialise(const page_id_t page_id, uint16_t zip_ssize, uint32_t state)
+  {
+    ut_ad(!page.in_file());
+    page.init(state, page_id, zip_ssize);
+#ifdef BTR_CUR_HASH_ADAPT
+    /* No adaptive hash index entries may point to a previously
+    unused (and now freshly allocated) block. */
+    assert_block_ahi_empty_on_init(this);
+    index= nullptr;
+    n_hash_helps= 0;
+    n_fields= 1;
+    n_bytes= 0;
+    left_side= true;
+#endif /* BTR_CUR_HASH_ADAPT */
+  }
 };
 
 /**********************************************************************//**
@@ -1170,12 +1168,10 @@ struct buf_pool_stat_t{
 	ulint	n_ra_pages_evicted;/*!< number of read ahead
 				pages that are evicted without
 				being accessed */
-	ulint	n_pages_made_young; /*!< number of pages made young, in
-				buf_page_make_young() */
+	ulint	n_pages_made_young; /*!< number of pages made young */
 	ulint	n_pages_not_made_young; /*!< number of pages not made
 				young because the first access
-				was not long enough ago, in
-				buf_page_peek_if_too_old() */
+				was not long enough ago */
 	/** number of waits for eviction */
 	ulint	LRU_waits;
 	ulint	LRU_bytes;	/*!< LRU size in bytes */
@@ -1841,15 +1837,12 @@ public:
     last_activity_count= activity_count;
   }
 
-	unsigned	freed_page_clock;/*!< a sequence number used
-					to count the number of buffer
-					blocks removed from the end of
-					the LRU list; NOTE that this
-					counter may wrap around at 4
-					billion! A thread is allowed
-					to read this for heuristic
-					purposes without holding any
-					mutex or latch */
+	/* @} */
+
+	/** @name LRU replacement algorithm fields */
+	/* @{ */
+
+
   /** Cleared when buf_LRU_get_free_block() fails.
   Set whenever the free list grows, along with a broadcast of done_free.
   Protected by buf_pool.mutex. */
@@ -1857,10 +1850,8 @@ public:
   /** Whether we have warned to be running out of buffer pool */
   std::atomic_flag LRU_warned;
 
-	/* @} */
-
-	/** @name LRU replacement algorithm fields */
-	/* @{ */
+  /** innodb_old_blocks_time; 0 if disabled */
+  uint32_t LRU_old_time_threshold;
 
 	UT_LIST_BASE_NODE_T(buf_page_t) free;
 					/*!< base node of the free
@@ -2077,11 +2068,11 @@ inline bool buf_page_t::is_old() const
   mysql_mutex_assert_owner(&buf_pool.mutex);
   ut_ad(in_file());
   ut_ad(in_LRU_list);
-  return old;
+  return zip.old();
 }
 
 /** Set whether a block is old in buf_pool.LRU */
-inline void buf_page_t::set_old(bool old)
+template<bool old> inline void buf_page_t::set_old()
 {
   mysql_mutex_assert_owner(&buf_pool.mutex);
   ut_ad(in_LRU_list);
@@ -2089,23 +2080,24 @@ inline void buf_page_t::set_old(bool old)
 #ifdef UNIV_LRU_DEBUG
   ut_a((buf_pool.LRU_old_len == 0) == (buf_pool.LRU_old == nullptr));
   /* If a block is flagged "old", the LRU_old list must exist. */
-  ut_a(!old || buf_pool.LRU_old);
+  ut_a(!zip.old() || buf_pool.LRU_old);
 
   if (UT_LIST_GET_PREV(LRU, this) && UT_LIST_GET_NEXT(LRU, this))
   {
     const buf_page_t *prev= UT_LIST_GET_PREV(LRU, this);
     const buf_page_t *next = UT_LIST_GET_NEXT(LRU, this);
-    if (prev->old == next->old)
-      ut_a(prev->old == old);
+    const bool prev_is_old{prev->zip.old()};
+    if (prev_is_old == next->zip.old())
+      ut_a(prev_is_old == old);
     else
     {
-      ut_a(!prev->old);
+      ut_a(!prev_is_old);
       ut_a(buf_pool.LRU_old == (old ? this : next));
     }
   }
 #endif /* UNIV_LRU_DEBUG */
 
-  this->old= old;
+  zip.set_old<old>();
 }
 
 #ifdef UNIV_DEBUG
@@ -2159,7 +2151,7 @@ inline buf_page_t *LRUItr::start()
 {
   mysql_mutex_assert_owner(m_mutex);
 
-  if (!m_hp || m_hp->old)
+  if (!m_hp || m_hp->zip.old())
     m_hp= UT_LIST_GET_LAST(buf_pool.LRU);
 
   return m_hp;
