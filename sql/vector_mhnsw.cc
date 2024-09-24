@@ -1293,9 +1293,10 @@ int mhnsw_first(TABLE *table, KEY *keyinfo, Item *dist, ulonglong limit)
   if (int err= table->file->ha_rnd_init(0))
     return err;
 
-  if (int err= MHNSW_Context::acquire(&ctx, table, false))
-    return err;
+  int err= MHNSW_Context::acquire(&ctx, table, false);
   SCOPE_EXIT([ctx, table](){ ctx->release(table); });
+  if (err)
+    return err;
 
   Neighborhood candidates, start_nodes;
   candidates.init(thd->alloc<FVectorNode*>(limit + 7), limit);

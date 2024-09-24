@@ -71,4 +71,11 @@ select id,vec_distance_euclidean(v, x'1f4d053f7056493f937da03dd8c97a3f220cbb3c92
 select id,vec_distance_euclidean(v, x'f618663f256be73e62cd453f8bcdbf3e16ae503c3858313f') d from t2 order by d limit 5;
 
 drop table t1, t2;
-exit;
+
+--echo #
+--echo # MDEV-34989 After selecting from empty table with vector key the next insert hangs
+--echo #
+create table t (v blob not null, vector key(v)) engine=InnoDB;
+select vec_distance_euclidean(v, x'B047263C9F87233fcfd27e3eae493e3f0329f43e') as e from t order by e limit 1;
+insert into t values (x'B047263C9F87233fcfd27e3eae493e3f0329f43e');
+drop table t;

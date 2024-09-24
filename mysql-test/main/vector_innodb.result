@@ -86,3 +86,11 @@ id	d
 2	0.79716
 9	0.82985
 drop table t1, t2;
+#
+# MDEV-34989 After selecting from empty table with vector key the next insert hangs
+#
+create table t (v blob not null, vector key(v)) engine=InnoDB;
+select vec_distance_euclidean(v, x'B047263C9F87233fcfd27e3eae493e3f0329f43e') as e from t order by e limit 1;
+e
+insert into t values (x'B047263C9F87233fcfd27e3eae493e3f0329f43e');
+drop table t;
