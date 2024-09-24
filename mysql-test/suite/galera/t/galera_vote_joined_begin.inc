@@ -6,6 +6,10 @@
 --source include/big_test.inc
 --source include/have_debug_sync.inc
 
+# Make sure that the test is operating on the right version of galera library.
+--let $galera_version=26.4.19
+source ../wsrep/include/check_galera_version.inc;
+
 --let $node_1=node_1
 --let $node_2=node_2
 --let $node_3=node_3
