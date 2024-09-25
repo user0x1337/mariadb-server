@@ -300,7 +300,12 @@ rtr_pcur_getnext_from_path(
 			break;
 		}
 
-		block->page.flag_accessed();
+		if (rw_latch != RW_NO_LATCH) {
+			block->page.flag_accessed();
+		} else {
+			/* rtr_latch_leaves() will invoke flag_accessed() */
+			block->page.flag_accessed_only();
+		}
 
 		page = buf_block_get_frame(block);
 		page_ssn = page_get_ssn_id(page);
@@ -685,15 +690,19 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     return err;
   }
 
-  block->page.flag_accessed();
+  const page_t *page= block->page.frame;
 
-  const page_t *page= buf_block_get_frame(block);
+  if (rw_latch != RW_NO_LATCH)
+  {
+    block->page.flag_accessed();
 #ifdef UNIV_ZIP_DEBUG
-  if (rw_latch != RW_NO_LATCH) {
     const page_zip_des_t *page_zip= buf_block_get_page_zip(block);
     ut_a(!page_zip || page_zip_validate(page_zip, page, index));
-  }
 #endif /* UNIV_ZIP_DEBUG */
+  }
+  else
+    /* rtr_latch_leaves() will invoke flag_accessed() */
+    block->page.flag_accessed_only();
 
   ut_ad(fil_page_index_page_check(page));
   ut_ad(index->id == btr_page_get_index_id(page));
