@@ -505,11 +505,12 @@ private:
   /** buf_block_t::invalidate() will increment this field every time
   a pointer to a record on the page may become obsolete for the quick path of
   btr_cur_t::restore_position(). */
-  uint32_t modify_clock_;
+  uint32_t modify_clock_low;
+  /** most significant part of the invalidate() counter */
+  uint16_t modify_clock_high;
 
-  /** ut_time_ms() of the first access of an in_file() block in buf_pool;
-  0=never. */
-  Atomic_relaxed<uint32_t> access_time;
+  /** time of the first access of an in_file() block in buf_pool; 0=never. */
+  Atomic_relaxed<uint16_t> access_time;
 
 public:
   /** state() of unused block (in buf_pool.free list) */
@@ -583,7 +584,8 @@ public:
   buf_page_t(const buf_page_t &b) :
     id_(b.id_), hash(b.hash),
     oldest_modification_(b.oldest_modification_),
-    modify_clock_(b.modify_clock_), access_time(b.access_time),
+    modify_clock_low(modify_clock_low), modify_clock_high(modify_clock_high),
+    access_time(b.access_time),
     lock() /* not copied */,
     frame(b.frame), zip(b.zip),
 #ifdef UNIV_DEBUG
@@ -606,7 +608,8 @@ public:
     ut_d(in_free_list= false);
     ut_d(in_LRU_list= false);
     ut_d(in_page_hash= false);
-    modify_clock_= 0;
+    modify_clock_low= 0;
+    modify_clock_high= 0;
     access_time= 0;
     zip.clear(state, ssize);
   }
@@ -828,9 +831,9 @@ public:
   inline bool is_old() const noexcept;
   /** Set whether a block is old in buf_pool.LRU */
   template<bool old> inline void set_old() noexcept;
-  /** @return ut_time_ms() at the time of first access of a block in buf_pool
+  /** @return uint16_t(time(nullptr)) of first access of a block in buf_pool
   @retval 0 if not accessed */
-  inline unsigned is_accessed() const noexcept { return access_time; }
+  inline uint16_t is_accessed() const noexcept { return access_time; }
 
   /** @return number of invalidate() calls */
   uint64_t modify_clock() const noexcept
@@ -838,7 +841,7 @@ public:
     ut_ad(frame);
     ut_ad(in_file());
     ut_ad(lock.have_any());
-    return modify_clock_;
+    return modify_clock_low | uint64_t{modify_clock_high} << 32;
   }
 
   /** Mark the block invalid for optimistic btr_pcur_t::restore_position()
@@ -861,7 +864,7 @@ public:
 
   /** Clear flag_accessed_only() during a batch
   @param tm  is_accessed() threshold */
-  void make_young(uint32_t tm) noexcept;
+  void make_young(uint16_t tm) noexcept;
 };
 
 /** The buffer control block structure */
@@ -2104,7 +2107,8 @@ inline void buf_page_t::invalidate() noexcept
   ut_ad(!buf_fix_count() || lock.have_u_or_x());
 #endif /* SAFE_MUTEX */
   assert_block_ahi_valid(reinterpret_cast<buf_block_t*>(this));
-  modify_clock_++;
+  if (!++modify_clock_low)
+    modify_clock_high++;
 }
 
 #ifdef UNIV_DEBUG

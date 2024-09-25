@@ -174,7 +174,7 @@ LRU list.  The compressed page is preserved, and it need not be clean.
 @param limit  maximum number of blocks to scan
 @param tm     buf_page_t::is_accessed() threshold for recent access, or 0
 @return true if freed */
-static bool buf_LRU_free_from_unzip_LRU_list(ulint limit, uint32_t tm)
+static bool buf_LRU_free_from_unzip_LRU_list(ulint limit, uint16_t tm)
 {
 	if (!buf_LRU_evict_from_unzip_LRU()) {
 		return(false);
@@ -220,7 +220,7 @@ static bool buf_LRU_free_from_unzip_LRU_list(ulint limit, uint32_t tm)
 @param limit  maximum number of blocks to scan
 @param tm     buf_page_t::is_accessed() threshold for recent access, or 0
 @return whether a page was freed */
-static bool buf_LRU_free_from_common_LRU_list(ulint limit, uint32_t tm)
+static bool buf_LRU_free_from_common_LRU_list(ulint limit, uint16_t tm)
 {
 	mysql_mutex_assert_owner(&buf_pool.mutex);
 
@@ -1294,8 +1294,8 @@ static bool buf_LRU_scan_and_free_block(ulint limit)
 {
   mysql_mutex_assert_owner(&buf_pool.mutex);
 
-  const uint32_t tm= buf_pool.LRU_old_time_threshold
-    ? uint32_t(ut_time_ms() - buf_pool.LRU_old_time_threshold)
+  const uint16_t tm= buf_pool.LRU_old_time_threshold
+    ? uint16_t(time(nullptr) - buf_pool.LRU_old_time_threshold / 1000)
     : 0;
 
   return buf_LRU_free_from_unzip_LRU_list(limit, tm) ||

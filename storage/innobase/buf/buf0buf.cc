@@ -834,8 +834,10 @@ inline void buf_block_t::init(byte *frame) noexcept
   assert_block_ahi_empty_on_init(this);
   page.frame= frame;
 
-  MEM_MAKE_DEFINED(&page.modify_clock_, sizeof page.modify_clock_);
-  ut_ad(!page.modify_clock_);
+  MEM_MAKE_DEFINED(&page.modify_clock_low, sizeof page.modify_clock_low);
+  ut_ad(!page.modify_clock_low);
+  MEM_MAKE_DEFINED(&page.modify_clock_high, sizeof page.modify_clock_high);
+  ut_ad(!page.modify_clock_high);
   MEM_MAKE_DEFINED(&page.access_time, sizeof page.access_time);
   ut_ad(!page.access_time);
   MEM_MAKE_DEFINED(&page.lock, sizeof page.lock);
@@ -3264,7 +3266,7 @@ bool buf_page_t::set_accessed() noexcept
 #endif /* SAFE_MUTEX */
   if (access_time)
     return true;
-  access_time= uint32_t(ut_time_ms());
+  access_time= uint16_t(time(nullptr));
   return false;
 }
 
